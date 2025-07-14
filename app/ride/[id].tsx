@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { ThemedText } from '@/components/ThemedText';
@@ -11,6 +11,14 @@ import { useApp } from '@/contexts/AppContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { getRideById, bookRide } from '@/store/slices/ridesSlice';
 import { RootState, AppDispatch } from '@/store';
+
+// Fonction utilitaire pour gérer l'affichage de l'avatar
+const getDriverAvatar = (driver: any) => {
+  if (driver?.avatar) {
+    return { uri: driver.avatar };
+  }
+  return require('@/assets/images/default-avatar.png');
+};
 
 export default function RideDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -31,8 +39,11 @@ export default function RideDetailsScreen() {
   const handleBooking = async () => {
     if (!currentRide) return;
 
-    if (credits < currentRide.pricePerSeat) {
-      Alert.alert("Crédits insuffisants", "Vous n'avez pas assez de crédits pour cette réservation.");
+    // Coût en crédits pour une réservation (fixe, pas lié au prix du trajet)
+    const bookingCost = 1; // 1 crédit par réservation
+
+    if (credits < bookingCost) {
+      Alert.alert("Crédits insuffisants", "Vous n'avez pas assez de crédits pour cette réservation. Vous avez besoin de 1 crédit.");
       return;
     }
 
@@ -42,16 +53,16 @@ export default function RideDetailsScreen() {
       const result = await dispatch(bookRide({
         rideId: currentRide.id,
         seats: 1,
-        totalPrice: currentRide.pricePerSeat
+        totalPrice: currentRide.pricePerSeat // Le prix reste pour le backend mais n'affecte pas les crédits
       })).unwrap();
       
       if (result) {
-        const success = deductCredits(currentRide.pricePerSeat, `Réservation: ${currentRide.from} → ${currentRide.to}`);
+        const success = deductCredits(bookingCost, `Réservation: ${currentRide.from?.address || currentRide.from} → ${currentRide.to?.address || currentRide.to}`);
         
         if (success) {
           Alert.alert(
             "Réservation confirmée !",
-            `Votre trajet de ${currentRide.from} vers ${currentRide.to} a été réservé.`,
+            `Votre trajet de ${currentRide.from?.address || currentRide.from} vers ${currentRide.to?.address || currentRide.to} a été réservé pour 1 crédit.`,
             [
               { text: "Voir mes réservations", onPress: () => router.push('/bookings') },
               { text: "OK", style: "default" }
@@ -136,7 +147,7 @@ export default function RideDetailsScreen() {
     <ThemedView style={[styles.container, { backgroundColor: Colors[theme].background }]}>
       <Stack.Screen 
         options={{ 
-          title: `${currentRide.from} → ${currentRide.to}`,
+          title: `${currentRide.from?.address || currentRide.from} → ${currentRide.to?.address || currentRide.to}`,
           headerShown: true,
         }} 
       />
@@ -156,7 +167,7 @@ export default function RideDetailsScreen() {
             </ThemedView>
             <ThemedView style={styles.overviewItem}>
               <IconSymbol name="dollarsign.circle" size={24} color={Colors[theme].tint} />
-              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{currentRide.pricePerSeat}€ / place</ThemedText>
+              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{currentRide.pricePerSeat} FCFA / place</ThemedText>
             </ThemedView>
             <ThemedView style={styles.overviewItem}>
               <IconSymbol name="person.3" size={24} color={Colors[theme].tint} />
@@ -169,9 +180,10 @@ export default function RideDetailsScreen() {
         <ThemedView style={[styles.driverCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
           <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Conducteur</ThemedText>
           <ThemedView style={styles.driverHeader}>
-            <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}>
-              <IconSymbol name="person" size={24} color={Colors[theme].icon} />
-            </ThemedView>
+            <Image 
+              source={getDriverAvatar(currentRide.driver)}
+              style={[styles.driverAvatar, { borderColor: Colors[theme].border }]}
+            />
             <ThemedView style={styles.driverInfo}>
               <ThemedText style={[styles.driverName, { color: Colors[theme].text }]}>{currentRide.driver?.name || 'Conducteur'}</ThemedText>
               {currentRide.driver?.verified && (
@@ -201,16 +213,31 @@ export default function RideDetailsScreen() {
               </ThemedView>
               <ThemedView style={styles.routeDetails}>
                 <ThemedText style={[styles.routeTime, { color: Colors[theme].text }]}>{formatTime(currentRide.departureTime)}</ThemedText>
-                <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{currentRide.from}</ThemedText>
+                <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{currentRide.from?.address || currentRide.from}</ThemedText>
               </ThemedView>
             </ThemedView>
+            
+            {/* Stops intermédiaires */}
+            {currentRide.stops && currentRide.stops.map((stop: any, index: number) => (
+              <ThemedView key={index} style={styles.routeItem}>
+                <ThemedView style={styles.routeMarker}>
+                  <ThemedView style={[styles.routeDot, { backgroundColor: '#ffa500' }]} />
+                  <ThemedView style={styles.routeLine} />
+                </ThemedView>
+                <ThemedView style={styles.routeDetails}>
+                  <ThemedText style={[styles.routeTime, { color: Colors[theme].text }]}>Stop {index + 1}</ThemedText>
+                  <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{stop.address}</ThemedText>
+                </ThemedView>
+              </ThemedView>
+            ))}
+            
             <ThemedView style={styles.routeItem}>
               <ThemedView style={styles.routeMarker}>
                 <ThemedView style={[styles.routeDot, { backgroundColor: '#dc3545' }]} />
               </ThemedView>
               <ThemedView style={styles.routeDetails}>
                 <ThemedText style={[styles.routeTime, { color: Colors[theme].text }]}>Arrivée</ThemedText>
-                <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{currentRide.to}</ThemedText>
+                <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{currentRide.to?.address || currentRide.to}</ThemedText>
               </ThemedView>
             </ThemedView>
           </ThemedView>
@@ -261,6 +288,26 @@ export default function RideDetailsScreen() {
           </ThemedView>
         )}
 
+        {/* Payment Info Card */}
+        <ThemedView style={[styles.paymentCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
+          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Informations de paiement</ThemedText>
+          <ThemedView style={styles.paymentInfo}>
+            <ThemedView style={styles.paymentItem}>
+              <IconSymbol name="creditcard" size={20} color={Colors[theme].tint} />
+              <ThemedText style={[styles.paymentLabel, { color: Colors[theme].text }]}>Coût de réservation</ThemedText>
+              <ThemedText style={[styles.paymentValue, { color: Colors[theme].tint }]}>1 crédit</ThemedText>
+            </ThemedView>
+            <ThemedView style={styles.paymentItem}>
+              <IconSymbol name="dollarsign.circle" size={20} color={Colors[theme].icon} />
+              <ThemedText style={[styles.paymentLabel, { color: Colors[theme].text }]}>Paiement au conducteur</ThemedText>
+              <ThemedText style={[styles.paymentValue, { color: Colors[theme].text }]}>{currentRide.pricePerSeat} FCFA</ThemedText>
+            </ThemedView>
+          </ThemedView>
+          <ThemedText style={[styles.paymentNote, { color: Colors[theme].icon }]}>
+            ⚠️ Vous devrez payer {currentRide.pricePerSeat} FCFA directement au conducteur lors du trajet
+          </ThemedText>
+        </ThemedView>
+
         {/* Action Buttons */}
         <ThemedView style={styles.actionButtons}>
           <TouchableOpacity
@@ -284,7 +331,7 @@ export default function RideDetailsScreen() {
             disabled={isBooking}
           >
             <ThemedText style={styles.bookButtonText}>
-              {isBooking ? 'Réservation...' : `Réserver (${currentRide.pricePerSeat}€)`}
+              {isBooking ? 'Réservation...' : `Réserver (1 crédit)`}
             </ThemedText>
           </TouchableOpacity>
         </ThemedView>
@@ -550,5 +597,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginTop: 20,
+  },
+  paymentCard: {
+    margin: 20,
+    marginTop: 0,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 0.5,
+  },
+  paymentInfo: {
+    gap: 15,
+    backgroundColor: 'transparent',
+  },
+  paymentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
+  },
+  paymentLabel: {
+    fontSize: 14,
+    flex: 1,
+    marginLeft: 10,
+  },
+  paymentValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  paymentNote: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 15,
+    textAlign: 'center',
   },
 }); 

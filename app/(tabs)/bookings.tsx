@@ -1,6 +1,6 @@
 import { Link } from 'expo-router';
 import { useEffect } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -12,10 +12,26 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { getUserBookings } from '@/store/slices/bookingsSlice';
 import { RootState, AppDispatch } from '@/store';
 
+// Fonction utilitaire pour gérer l'affichage de l'avatar
+const getDriverAvatar = (driver: any) => {
+  if (driver?.avatar) {
+    return { uri: driver.avatar };
+  }
+  return require('@/assets/images/default-avatar.png');
+};
+
 export default function BookingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const dispatch = useDispatch<AppDispatch>();
   const { bookings = [], loading, error } = useSelector((state: RootState) => state.bookings);
+
+  // Fonction utilitaire pour extraire l'adresse
+  const getAddress = (location: any) => {
+    if (typeof location === 'object' && location?.address) {
+      return location.address;
+    }
+    return location;
+  };
 
   useEffect(() => {
     dispatch(getUserBookings());
@@ -142,9 +158,9 @@ export default function BookingsScreen() {
                 <TouchableOpacity style={[styles.bookingCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
                   <ThemedView style={styles.bookingHeader}>
                     <ThemedView style={styles.routeInfo}>
-                      <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
-                        {booking.ride.from} → {booking.ride.to}
-                      </ThemedText>
+                                              <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
+                          {getAddress(booking.ride.from)} → {getAddress(booking.ride.to)}
+                        </ThemedText>
                       <ThemedText style={[styles.bookingDate, { color: Colors[colorScheme].text }]}>
                         {formatDate(booking.ride.date)} • {formatTime(booking.ride.departureTime)}
                       </ThemedText>
@@ -161,9 +177,10 @@ export default function BookingsScreen() {
 
                   <ThemedView style={styles.bookingDetails}>
                     <ThemedView style={styles.driverInfo}>
-                      <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card }]}>
-                        <IconSymbol name="person" size={16} color={Colors[colorScheme].icon} />
-                      </ThemedView>
+                      <Image 
+                        source={getDriverAvatar(booking.ride.driver)}
+                        style={styles.driverAvatar}
+                      />
                       <ThemedView style={styles.driverDetails}>
                         <ThemedText style={[styles.driverName, { color: Colors[colorScheme].text }]}>
                           {booking.ride.driver.name}

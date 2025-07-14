@@ -5,7 +5,18 @@ import { api, ApiResponse, User, Ride } from './axios-config';
 // Fonction utilitaire pour gérer les erreurs Axios
 const handleAxiosError = (error: any, defaultMessage: string): never => {
   if (axios.isAxiosError(error)) {
-    const message = error.response?.data?.message || defaultMessage;
+    let message = defaultMessage;
+    
+    // Si c'est une erreur de validation, construire un message détaillé
+    if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+      const validationErrors = error.response.data.errors;
+      const errorMessages = validationErrors.map((err: any) => err.msg).join(', ');
+      message = errorMessages;
+    } else {
+      // Sinon utiliser le message du backend ou le message par défaut
+      message = error.response?.data?.message || defaultMessage;
+    }
+    
     const newError = new Error(message);
     if (error.response?.data?.errors) {
       (newError as any).errors = error.response.data.errors;

@@ -38,6 +38,14 @@ export function CustomDateTimePicker({
   const [minute, setMinute] = useState('00');
   const [period, setPeriod] = useState<'AM' | 'PM'>('PM');
 
+  // Fonction utilitaire pour formater la date sans problème de fuseau horaire
+  const formatDateForCalendar = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   useEffect(() => {
     if (isVisible) {
       const initialDate = date || new Date();
@@ -51,20 +59,38 @@ export function CustomDateTimePicker({
   }, [isVisible, date]);
 
   const handleDayPress = (day: any) => {
-    const newDate = new Date(selectedDate);
-    newDate.setFullYear(day.year, day.month - 1, day.day);
+    // Créer une nouvelle date directement avec les valeurs du jour sélectionné
+    const newDate = new Date(day.year, day.month - 1, day.day);
+    
+    // S'assurer que la date n'est pas dans le passé
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (newDate < today) {
+      newDate.setTime(today.getTime());
+    }
+    
     setSelectedDate(newDate);
   };
 
   const handleConfirm = () => {
+    // Créer une nouvelle date avec la date sélectionnée
     const finalDate = new Date(selectedDate);
     
+    // Validation et conversion des heures
     let h = parseInt(hour, 10);
-    if (isNaN(h) || h < 1 || h > 12) h = 12;
+    if (isNaN(h) || h < 1 || h > 12) {
+      h = 12;
+      setHour('12');
+    }
 
+    // Validation et conversion des minutes
     let m = parseInt(minute, 10);
-    if (isNaN(m) || m < 0 || m > 59) m = 0;
+    if (isNaN(m) || m < 0 || m > 59) {
+      m = 0;
+      setMinute('00');
+    }
 
+    // Conversion en format 24h
     let finalHour = h;
     if (period === 'PM' && h < 12) {
       finalHour = h + 12;
@@ -72,7 +98,8 @@ export function CustomDateTimePicker({
       finalHour = 0;
     }
 
-    finalDate.setHours(finalHour, m);
+    // Définir l'heure locale sans conversion UTC
+    finalDate.setHours(finalHour, m, 0, 0);
     onConfirm(finalDate);
   };
 
@@ -116,13 +143,18 @@ export function CustomDateTimePicker({
           </ThemedView>
 
           <Calendar
-            current={selectedDate.toISOString().split('T')[0]}
+            current={formatDateForCalendar(selectedDate)}
             onDayPress={handleDayPress}
             markedDates={{
-              [selectedDate.toISOString().split('T')[0]]: { selected: true, disableTouchEvent: true }
+              [formatDateForCalendar(selectedDate)]: { 
+                selected: true, 
+                disableTouchEvent: false,
+                selectedColor: Colors[colorScheme].tint
+              }
             }}
             theme={calendarTheme}
             style={{ borderRadius: 16, overflow: 'hidden' }}
+            minDate={formatDateForCalendar(new Date())} // Empêcher la sélection de dates passées
           />
 
           <ThemedView style={styles.timeSection}>

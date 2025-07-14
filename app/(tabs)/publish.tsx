@@ -7,6 +7,18 @@ import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
 import { router } from 'expo-router';
 
+// Fonction utilitaire pour formater la date sans décalage UTC
+const formatDateForBackend = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+};
+
 import { GoogleTextInput, LocationInfo } from '@/components/GoogleTextInput';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -50,6 +62,7 @@ export default function PublishScreen() {
 
   const [fromLocation, setFromLocation] = useState<LocationInfo | null>(null);
   const [toLocation, setToLocation] = useState<LocationInfo | null>(null);
+  const [stops, setStops] = useState<(LocationInfo | null)[]>([]);
 
   const [formData, setFormData] = useState({
     seats: "",
@@ -70,9 +83,6 @@ export default function PublishScreen() {
   const [vehicleYear, setVehicleYear] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [emptySeats, setEmptySeats] = useState('');
-  const [backRowSeats, setBackRowSeats] = useState<'2' | '3'>('2');
-  const [luggage, setLuggage] = useState<'none' | 'S' | 'M' | 'L'>('none');
-  const [bookingPreference, setBookingPreference] = useState<'manual' | 'auto'>('manual');
 
   const handleAmenityChange = (amenity: string, isSelected: boolean) => {
     setFormData(prev => ({
@@ -93,6 +103,36 @@ export default function PublishScreen() {
       formData.price && 
       acceptRules
     );
+  };
+
+  // Ajouter un stop intermédiaire
+  const addStop = () => {
+    if (stops.length < 3) { // Limiter à 3 stops maximum
+      setStops([...stops, null as LocationInfo | null]);
+    }
+  };
+
+  // Supprimer un stop
+  const removeStop = (index: number) => {
+    Alert.alert(
+      'Supprimer le stop',
+      'Êtes-vous sûr de vouloir supprimer ce stop ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { 
+          text: 'Supprimer', 
+          style: 'destructive',
+          onPress: () => setStops(stops.filter((_, i) => i !== index))
+        }
+      ]
+    );
+  };
+
+  // Mettre à jour un stop
+  const updateStop = (index: number, location: LocationInfo | null) => {
+    const newStops = [...stops];
+    newStops[index] = location;
+    setStops(newStops);
   };
 
   const handleSubmit = async () => {
@@ -129,24 +169,37 @@ export default function PublishScreen() {
     }
 
     try {
-      const rideData = {
+      const rideData: any = {
         from: fromLocation!.address,
         to: toLocation!.address,
         fromLat: fromLocation!.latitude,
         fromLng: fromLocation!.longitude,
         toLat: toLocation!.latitude,
         toLng: toLocation!.longitude,
-        date: rideDateTime!.toISOString().split('T')[0],
-        departureTime: rideDateTime!.toTimeString().split(' ')[0],
-        availableSeats: parseInt(formData.seats),
-        totalSeats: parseInt(formData.seats), // Ajout du totalSeats
-        pricePerSeat: parseFloat(formData.price),
+        stops: stops.filter(stop => stop !== null).map(stop => ({
+          address: stop!.address,
+          lat: stop!.latitude,
+          lng: stop!.longitude
+        })),
+        departureDate: formatDateForBackend(rideDateTime!), // Format date locale sans UTC
+        price: parseFloat(formData.price),
+        seats: parseInt(formData.seats),
         description: formData.description,
-        carMake: formData.carMake,
-        carModel: formData.carModel,
-        carYear: formData.carYear,
         amenities: formData.amenities,
       };
+
+      // Ajouter les champs optionnels seulement s'ils ne sont pas vides
+      if (formData.carMake.trim()) {
+        rideData.carMake = formData.carMake;
+      }
+      if (formData.carModel.trim()) {
+        rideData.carModel = formData.carModel;
+      }
+      if (formData.carYear.trim()) {
+        rideData.carYear = parseInt(formData.carYear);
+      }
+
+      console.log( "rideData", rideData);
 
       const result = await dispatch(createRide(rideData)).unwrap();
       
@@ -179,9 +232,13 @@ export default function PublishScreen() {
       }
     } catch (error: any) {
       console.error('Erreur de publication:', error);
+      console.log('Message d\'erreur:', error);
+      
+      // L'erreur est directement la chaîne de caractères du backend
+      const errorMessage = typeof error === 'string' ? error : error.message || 'Erreur lors de la publication du trajet';
       
       // Gestion spécifique des erreurs
-      if (error.includes('Crédits insuffisants')) {
+      if (errorMessage.includes('Crédits insuffisants') || errorMessage.includes('5 crédits requis')) {
         Alert.alert(
           'Crédits insuffisants',
           'Vous devez avoir au moins 5 crédits pour publier un trajet. Vous pouvez acheter des crédits dans votre portefeuille.',
@@ -191,7 +248,8 @@ export default function PublishScreen() {
           ]
         );
       } else {
-        Alert.alert('Erreur', error || 'Erreur lors de la publication du trajet');
+        // Afficher le message d'erreur du backend
+        Alert.alert('Erreur de validation', errorMessage);
       }
     }
   };
@@ -242,6 +300,38 @@ export default function PublishScreen() {
                 placeholder="Lieu de départ"
                 showCurrentLocation
               />
+              
+              {/* Stops intermédiaires */}
+              {stops.map((stop, index) => (
+                <ThemedView key={index} style={[styles.stopContainer, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
+                  <ThemedView style={[styles.stopInputContainer, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
+                    <GoogleTextInput
+                      initialLocation={stop?.address || null}
+                      onLocationSelect={(loc) => updateStop(index, loc)}
+                      placeholder={`Stop ${index + 1} (optionnel)`}
+                    />
+                  </ThemedView>
+                  <TouchableOpacity
+                    style={[styles.removeStopButton, { backgroundColor: Colors[colorScheme].card }]}
+                    onPress={() => removeStop(index)}
+                  >
+                    <IconSymbol name="xmark" size={24} color="#ef4444" />
+                  </TouchableOpacity>
+                </ThemedView>
+              ))}
+              
+              {stops.length < 3 && (
+                <TouchableOpacity
+                  style={[styles.addStopButton, { borderColor: Colors[colorScheme].border }]}
+                  onPress={addStop}
+                >
+                  <IconSymbol name="plus.circle" size={20} color={Colors[colorScheme].tint} />
+                  <ThemedText style={[styles.addStopText, { color: Colors[colorScheme].tint }]}>
+                    Ajouter un stop
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+              
               <GoogleTextInput
                 initialLocation={toLocation?.address || null}
                 onLocationSelect={(loc) => setToLocation(loc)}
@@ -334,10 +424,10 @@ export default function PublishScreen() {
             </View>
                 </ThemedView>
                 <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card }]}>
-                  <ThemedText style={styles.label}>Prix par place</ThemedText>
+                  <ThemedText style={styles.label}>Prix par place (FCFA)</ThemedText>
                   <TextInput
                     style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}
-                    placeholder="0.00"
+                    placeholder="0"
                     placeholderTextColor={Colors[colorScheme].icon}
                     value={formData.price}
                     onChangeText={(text) => setFormData((prev) => ({ ...prev, price: text }))}
@@ -739,5 +829,34 @@ const styles = StyleSheet.create({
   costText: {
     fontSize: 14,
     opacity: 0.8,
+  },
+  stopContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  removeStopButton: {
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    minHeight: 40,
+  },
+  addStopButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    gap: 8,
+  },
+  addStopText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  stopInputContainer: {
+    flex: 1,
   },
 }); 

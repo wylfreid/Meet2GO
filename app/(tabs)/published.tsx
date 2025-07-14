@@ -165,7 +165,18 @@ export default function PublishedScreen() {
                     <ThemedView style={styles.rideHeader}>
                       <ThemedView style={styles.routeInfo}>
                         <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
-                          {ride.from} → {ride.to}
+                          {ride.from?.address || ride.from} 
+                          {ride.stops && ride.stops.length > 0 && (
+                            <>
+                              {ride.stops.map((stop: any, index: number) => (
+                                <ThemedText key={index} style={[styles.routeText, { color: Colors[colorScheme].text }]}>
+                                  {' → '}{stop.address}
+                                </ThemedText>
+                              ))}
+                              {' → '}
+                            </>
+                          )}
+                          {ride.to?.address || ride.to}
                         </ThemedText>
                         <ThemedText style={[styles.rideDate, { color: Colors[colorScheme].text }]}>
                           {formatDate(ride.date)} • {formatTime(ride.departureTime)}
@@ -205,11 +216,11 @@ export default function PublishedScreen() {
                       <ThemedView style={styles.rideFooter}>
                         <ThemedView style={styles.priceInfo}>
                           <ThemedText style={[styles.priceLabel, { color: Colors[colorScheme].text }]}>Prix par place</ThemedText>
-                          <ThemedText style={[styles.price, { color: Colors[colorScheme].text }]}>{ride.pricePerSeat}€</ThemedText>
+                          <ThemedText style={[styles.price, { color: Colors[colorScheme].text }]}>{ride.pricePerSeat} FCFA</ThemedText>
                         </ThemedView>
                         <ThemedView style={styles.earningsInfo}>
                           <ThemedText style={[styles.earningsLabel, { color: Colors[colorScheme].text }]}>Gains</ThemedText>
-                          <ThemedText style={[styles.earnings, { color: Colors[colorScheme].text }]}>{earnings}€</ThemedText>
+                          <ThemedText style={[styles.earnings, { color: Colors[colorScheme].text }]}>{earnings} FCFA</ThemedText>
                         </ThemedView>
                       </ThemedView>
                     </ThemedView>

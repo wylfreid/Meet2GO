@@ -13,6 +13,22 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { HomeAPI } from '@/services/api';
 import { RootState, AppDispatch } from '@/store';
 
+// Fonction utilitaire pour gérer l'affichage de l'avatar
+const getDriverAvatar = (driver: any) => {
+  if (driver?.avatar) {
+    return { uri: driver.avatar };
+  }
+  return require('@/assets/images/default-avatar.png');
+};
+
+// Utility function to safely extract address from location objects
+const getLocationAddress = (location: { address: string } | string | null | undefined): string => {
+  if (!location) return '';
+  if (typeof location === 'string') return location;
+  if (typeof location === 'object' && location.address) return location.address;
+  return '';
+};
+
 // Définition du type Ride
 interface Ride {
   id: string;
@@ -188,17 +204,18 @@ export default function HomeScreen() {
                   <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
                     <ThemedView style={styles.rideHeader}>
                       <ThemedView style={styles.routeInfo}>
-                        <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>{ride.from.address} → {ride.to.address}</ThemedText>
+                        <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>{getLocationAddress(ride.from)} → {getLocationAddress(ride.to)}</ThemedText>
                         <ThemedText style={[styles.rideDate, { color: Colors[colorScheme].text }]}>{ride.date} • {ride.departureTime}</ThemedText>
                       </ThemedView>
-                      <ThemedText style={[styles.ridePrice, { color: Colors[colorScheme].text }]}>{ride.pricePerSeat}€</ThemedText>
+                      <ThemedText style={[styles.ridePrice, { color: Colors[colorScheme].text }]}>{ride.pricePerSeat} FCFA</ThemedText>
                     </ThemedView>
                     
                     <ThemedView style={styles.rideFooter}>
                       <ThemedView style={styles.driverInfo}>
-                        <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card }]}>
-                          <IconSymbol name="person" size={12} color={Colors[colorScheme].icon} />
-                        </ThemedView>
+                        <Image 
+                          source={getDriverAvatar(ride.driver)}
+                          style={styles.driverAvatar}
+                        />
                         <ThemedText style={[styles.driverName, { color: Colors[colorScheme].text }]}>{ride.driver?.name || 'Conducteur'}</ThemedText>
                         <ThemedView style={styles.ratingContainer}>
                           <IconSymbol name="star" size={12} color="#FFD700" />

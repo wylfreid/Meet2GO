@@ -1,9 +1,10 @@
 import { CustomDateTimePicker } from '@/components/ui/CustomDateTimePicker';
 import { Link } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
+import Slider from '@react-native-community/slider';
 
 import { GoogleTextInput, LocationInfo } from '@/components/GoogleTextInput';
 import { ThemedText } from '@/components/ThemedText';
@@ -15,25 +16,27 @@ import { searchRides } from '@/store/slices/ridesSlice';
 import { RootState, AppDispatch } from '@/store';
 import { formatFullDate, formatTime } from '@/utils/dateUtils';
 
+// Fonction utilitaire pour gérer l'affichage de l'avatar
+const getDriverAvatar = (driver: any) => {
+  if (driver?.avatar) {
+    return { uri: driver.avatar };
+  }
+  return require('@/assets/images/default-avatar.png');
+};
+
 export default function SearchScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const dispatch = useDispatch<AppDispatch>();
   const { rides = [], loading, error } = useSelector((state: RootState) => state.rides);
   
-  const [priceRange, setPriceRange] = useState([0, 10000]);
+  const [maxPrice, setMaxPrice] = useState(10000);
   const [sortBy, setSortBy] = useState("price");
   const [showFilters, setShowFilters] = useState(false);
   const [fromLocation, setFromLocation] = useState<LocationInfo | null>(null);
   const [toLocation, setToLocation] = useState<LocationInfo | null>(null);
   const [rideDate, setRideDate] = useState<Date | null>(null);
   const [isPickerVisible, setPickerVisible] = useState(false);
-  const [selectedTimeFilter, setSelectedTimeFilter] = useState<string | null>(null);
-
-  const timeFilters = [
-    { id: 'morning', label: 'Matin (6h-12h)' },
-    { id: 'afternoon', label: 'Après-midi (12h-18h)' },
-    { id: 'evening', label: 'Soirée (18h-24h)' },
-  ];
+  const [selectedSeatsFilter, setSelectedSeatsFilter] = useState<number | null>(null);
 
   const handleSearch = async () => {
     if (!fromLocation || !toLocation) {
@@ -55,14 +58,6 @@ export default function SearchScreen() {
         searchParams.date = rideDate.toISOString().split('T')[0];
       }
 
-      if (selectedTimeFilter) {
-        searchParams.timeFilter = selectedTimeFilter;
-      }
-
-      if (priceRange[1] < 100) {
-        searchParams.maxPrice = priceRange[1];
-      }
-
       await dispatch(searchRides(searchParams)).unwrap();
     } catch (error: any) {
       console.error('Erreur de recherche:', error);
@@ -70,8 +65,39 @@ export default function SearchScreen() {
     }
   };
 
-  const handleTimeFilterPress = (filterId: string) => {
-    setSelectedTimeFilter(selectedTimeFilter === filterId ? null : filterId);
+  // Filtrer les résultats selon les critères
+  const filteredRides = rides.filter((ride) => {
+    // Filtre par prix
+    if (ride.pricePerSeat > maxPrice) {
+      return false;
+    }
+
+    // Filtre par nombre de places
+    if (selectedSeatsFilter && ride.availableSeats < selectedSeatsFilter) {
+      return false;
+    }
+
+    return true;
+  });
+
+  // Trier les résultats filtrés
+  const sortedRides = [...filteredRides].sort((a, b) => {
+    if (sortBy === 'price') {
+      return a.pricePerSeat - b.pricePerSeat;
+    } else {
+      // Trier par heure de départ
+      const timeA = new Date(`2000-01-01T${a.departureTime}`);
+      const timeB = new Date(`2000-01-01T${b.departureTime}`);
+      return timeA.getTime() - timeB.getTime();
+    }
+  });
+
+  const handleSeatsFilterPress = (seats: number) => {
+    setSelectedSeatsFilter(selectedSeatsFilter === seats ? null : seats);
+  };
+
+  const handleSortPress = () => {
+    setSortBy(sortBy === 'price' ? 'time' : 'price');
   };
 
   const handleFilterToggle = () => {
@@ -118,7 +144,7 @@ export default function SearchScreen() {
             >
               <IconSymbol name="calendar" size={20} color={Colors[colorScheme].icon} />
               <ThemedText style={[styles.input, { color: rideDate ? Colors[colorScheme].text : Colors[colorScheme].icon }]}>
-                {rideDate ? rideDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Date'} à {rideDate ? rideDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'Heure'}
+                {rideDate ? rideDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Date'} et {rideDate ? rideDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'Heure'}
               </ThemedText>
             </TouchableOpacity>
             
@@ -153,42 +179,83 @@ export default function SearchScreen() {
           {showFilters && (
             <ThemedView style={styles.filtersContent}>
               <ThemedText style={styles.filterLabel}>
-                Fourchette de prix: {priceRange[0]} - {priceRange[1]} FCFA
+                Prix maximum: {maxPrice} FCFA
               </ThemedText>
-              {/* Price slider would go here */}
-              
-              <ThemedText style={styles.filterLabel}>Heure de départ</ThemedText>
-              <ThemedView style={styles.filterOptions}>
-                {timeFilters.map((filter) => (
-                  <TouchableOpacity
-                    key={filter.id}
-                    style={[
-                      styles.filterOption,
-                      {
-                        backgroundColor: selectedTimeFilter === filter.id ? Colors[colorScheme].tint : Colors[colorScheme].card,
-                        borderColor: Colors[colorScheme].border,
-                      },
-                      {
-                        borderWidth: selectedTimeFilter === filter.id ? 1 : 0.5,
-                      },
-                    ]}
-                    onPress={() => handleTimeFilterPress(filter.id)}
-                  >
-                    <ThemedText style={styles.filterOptionText}>{filter.label}</ThemedText>
-                  </TouchableOpacity>
-                ))}
+              <ThemedView style={[styles.sliderContainer, { backgroundColor: Colors[colorScheme].card }]}>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={0}
+                  maximumValue={10000}
+                  value={maxPrice}
+                  onSlidingComplete={(value: number) => setMaxPrice(Math.round(value))}
+                  step={100}
+                  minimumTrackTintColor={Colors[colorScheme].tint}
+                  maximumTrackTintColor={Colors[colorScheme].border}
+                  thumbTintColor={Colors[colorScheme].tint}
+                />
+                <ThemedView style={[styles.sliderLabels, { backgroundColor: Colors[colorScheme].card }]}>
+                  <ThemedText style={[styles.sliderLabel, { color: Colors[colorScheme].icon }]}>0 FCFA</ThemedText>
+                  <ThemedText style={[styles.sliderLabel, { color: Colors[colorScheme].icon }]}>10000 FCFA</ThemedText>
+                </ThemedView>
               </ThemedView>
+              
+
               
               <ThemedText style={styles.filterLabel}>Places disponibles</ThemedText>
               <ThemedView style={styles.filterOptions}>
-                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
-                  <ThemedText style={styles.filterOptionText}>1 place</ThemedText>
+                <TouchableOpacity 
+                  style={[
+                    styles.filterOption,
+                    {
+                      backgroundColor: selectedSeatsFilter === 1 ? Colors[colorScheme].tint : Colors[colorScheme].card,
+                      borderColor: Colors[colorScheme].border,
+                    },
+                    {
+                      borderWidth: selectedSeatsFilter === 1 ? 1 : 0.5,
+                    },
+                  ]}
+                  onPress={() => handleSeatsFilterPress(1)}
+                >
+                  <ThemedText style={[
+                    styles.filterOptionText,
+                    { color: selectedSeatsFilter === 1 ? 'white' : Colors[colorScheme].text }
+                  ]}>1 place</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
-                  <ThemedText style={styles.filterOptionText}>2+ places</ThemedText>
+                <TouchableOpacity 
+                  style={[
+                    styles.filterOption,
+                    {
+                      backgroundColor: selectedSeatsFilter === 2 ? Colors[colorScheme].tint : Colors[colorScheme].card,
+                      borderColor: Colors[colorScheme].border,
+                    },
+                    {
+                      borderWidth: selectedSeatsFilter === 2 ? 1 : 0.5,
+                    },
+                  ]}
+                  onPress={() => handleSeatsFilterPress(2)}
+                >
+                  <ThemedText style={[
+                    styles.filterOptionText,
+                    { color: selectedSeatsFilter === 2 ? 'white' : Colors[colorScheme].text }
+                  ]}>2+ places</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
-                  <ThemedText style={styles.filterOptionText}>3+ places</ThemedText>
+                <TouchableOpacity 
+                  style={[
+                    styles.filterOption,
+                    {
+                      backgroundColor: selectedSeatsFilter === 3 ? Colors[colorScheme].tint : Colors[colorScheme].card,
+                      borderColor: Colors[colorScheme].border,
+                    },
+                    {
+                      borderWidth: selectedSeatsFilter === 3 ? 1 : 0.5,
+                    },
+                  ]}
+                  onPress={() => handleSeatsFilterPress(3)}
+                >
+                  <ThemedText style={[
+                    styles.filterOptionText,
+                    { color: selectedSeatsFilter === 3 ? 'white' : Colors[colorScheme].text }
+                  ]}>3+ places</ThemedText>
                 </TouchableOpacity>
               </ThemedView>
             </ThemedView>
@@ -198,10 +265,10 @@ export default function SearchScreen() {
         {/* Results Header */}
         <ThemedView style={styles.resultsHeader}>
           <ThemedText style={styles.resultsTitle}>
-            {loading ? 'Recherche en cours...' : `${rides.length} trajets trouvés`}
+            {loading ? 'Recherche en cours...' : `${sortedRides.length} trajets trouvés`}
           </ThemedText>
           
-          <TouchableOpacity style={styles.sortButton}>
+          <TouchableOpacity style={styles.sortButton} onPress={handleSortPress}>
             <ThemedText style={[styles.sortButtonText, { color: Colors[colorScheme].tint }]}>
               Trier par {sortBy === 'price' ? 'prix' : 'heure'}
             </ThemedText>
@@ -211,7 +278,7 @@ export default function SearchScreen() {
 
         {/* Results */}
         <ThemedView style={styles.results}>
-          {rides.length === 0 && !loading ? (
+          {sortedRides.length === 0 && !loading ? (
             <ThemedView style={styles.noResults}>
               <IconSymbol name="magnifyingglass" size={48} color={Colors[colorScheme].icon} />
               <ThemedText style={[styles.noResultsText, { color: Colors[colorScheme].icon }]}>
@@ -222,29 +289,49 @@ export default function SearchScreen() {
               </ThemedText>
             </ThemedView>
           ) : (
-            rides.map((ride) => (
+            sortedRides.map((ride) => (
               <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
                 <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
                   <ThemedView style={styles.rideHeader}>
                     <ThemedView style={styles.rideInfo}>
                       <ThemedText style={styles.rideRoute}>
-                        {ride.from} → {ride.to}
+                        {ride.from?.address || ride.from} 
+                        {ride.stops && ride.stops.length > 0 && (
+                          <>
+                            {ride.stops.map((stop: any, index: number) => (
+                              <ThemedText key={index} style={styles.rideRoute}>
+                                {' → '}{stop.address}
+                              </ThemedText>
+                            ))}
+                            {' → '}
+                          </>
+                        )}
+                        {ride.to?.address || ride.to}
                       </ThemedText>
+                      {/* Indication si le trajet passe par la destination recherchée */}
+                      {toLocation && ride.stops && ride.stops.some((stop: any) => 
+                        stop.address?.toLowerCase().includes(toLocation.address.toLowerCase())
+                      ) && (
+                        <ThemedText style={[styles.stopIndicator, { color: Colors[colorScheme].tint }]}>
+                          ⚠️ Ce trajet passe par votre destination
+                        </ThemedText>
+                      )}
                       <ThemedText style={[styles.rideDateTime, { color: Colors[colorScheme].icon }]}>
                         {formatRideDate(ride.date)} • {formatRideTime(ride.departureTime)}
                       </ThemedText>
                     </ThemedView>
                     <ThemedView style={styles.ridePrice}>
-                      <ThemedText style={styles.priceText}>€{ride.pricePerSeat}</ThemedText>
+                      <ThemedText style={styles.priceText}>{ride.pricePerSeat} FCFA</ThemedText>
                       <ThemedText style={[styles.priceLabel, { color: Colors[colorScheme].icon }]}>par place</ThemedText>
                     </ThemedView>
                   </ThemedView>
                   
                   <ThemedView style={styles.rideDetails}>
                     <ThemedView style={styles.driverInfo}>
-                      <ThemedView style={styles.avatar}>
-                        <IconSymbol name="person.fill" size={16} color={Colors[colorScheme].icon} />
-                      </ThemedView>
+                      <Image 
+                        source={getDriverAvatar(ride.driver)}
+                        style={styles.avatar}
+                      />
                       <ThemedView style={styles.driverText}>
                         <ThemedText style={styles.driverName}>{ride.driver?.name || 'Conducteur'}</ThemedText>
                         <ThemedView style={styles.ratingContainer}>
@@ -359,6 +446,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginBottom: 5,
+  },
+  sliderContainer: {
+    marginBottom: 15,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  sliderLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
+  },
+  sliderLabel: {
+    fontSize: 12,
   },
   filterOptions: {
     flexDirection: 'row',
@@ -511,5 +613,10 @@ const styles = StyleSheet.create({
   statText: {
     fontSize: 14,
     opacity: 0.7,
+  },
+  stopIndicator: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 }); 
