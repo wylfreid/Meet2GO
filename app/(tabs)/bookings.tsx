@@ -1,72 +1,31 @@
 import { Link } from 'expo-router';
+import { useEffect } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { getUserBookings } from '@/store/slices/bookingsSlice';
+import { RootState, AppDispatch } from '@/store';
 
 export default function BookingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const dispatch = useDispatch<AppDispatch>();
+  const { bookings = [], loading, error } = useSelector((state: RootState) => state.bookings);
 
-  const bookings = [
-    {
-      id: 1,
-      from: "Toronto",
-      to: "Montreal",
-      date: "28 décembre 2024",
-      time: "9:00",
-      price: 45,
-      status: "confirmed",
-      driver: "Sarah M.",
-      rating: 4.9,
-      seats: 1,
-    },
-    {
-      id: 2,
-      from: "Vancouver",
-      to: "Calgary",
-      date: "30 décembre 2024",
-      time: "14:00",
-      price: 60,
-      status: "upcoming",
-      driver: "Mike R.",
-      rating: 4.8,
-      seats: 2,
-    },
-    {
-      id: 3,
-      from: "Ottawa",
-      to: "Quebec City",
-      date: "25 décembre 2024",
-      time: "11:00",
-      price: 35,
-      status: "completed",
-      driver: "Emma L.",
-      rating: 5.0,
-      seats: 1,
-    },
-    {
-      id: 4,
-      from: "Edmonton",
-      to: "Winnipeg",
-      date: "20 décembre 2024",
-      time: "8:00",
-      price: 55,
-      status: "cancelled",
-      driver: "John D.",
-      rating: 4.7,
-      seats: 1,
-    },
-  ];
+  useEffect(() => {
+    dispatch(getUserBookings());
+  }, [dispatch]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed':
         return '#10b981';
-      case 'upcoming':
+      case 'pending':
         return '#3b82f6';
       case 'completed':
         return '#6b7280';
@@ -81,8 +40,8 @@ export default function BookingsScreen() {
     switch (status) {
       case 'confirmed':
         return 'Confirmé';
-      case 'upcoming':
-        return 'À venir';
+      case 'pending':
+        return 'En attente';
       case 'completed':
         return 'Terminé';
       case 'cancelled':
@@ -96,7 +55,7 @@ export default function BookingsScreen() {
     switch (status) {
       case 'confirmed':
         return 'checkmark.circle';
-      case 'upcoming':
+      case 'pending':
         return 'clock';
       case 'completed':
         return 'checkmark.circle.fill';
@@ -106,6 +65,48 @@ export default function BookingsScreen() {
         return 'circle';
     }
   };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
+  const formatTime = (timeString: string) => {
+    const date = new Date(`2000-01-01T${timeString}`);
+    return date.toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
+        <ThemedView style={styles.loadingContainer}>
+          <ThemedText style={[styles.loadingText, { color: Colors[colorScheme].text }]}>
+            Chargement des réservations...
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
+        <ThemedView style={styles.errorContainer}>
+          <IconSymbol name="exclamationmark.triangle" size={48} color="#ef4444" />
+          <ThemedText style={[styles.errorText, { color: Colors[colorScheme].text }]}>
+            Erreur: {error}
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
@@ -125,61 +126,73 @@ export default function BookingsScreen() {
         </ThemedView>
 
         <ThemedView style={styles.bookingsContainer}>
-          {bookings.map((booking) => (
-            <Link key={booking.id} href={`/ride/${booking.id}`} asChild>
-              <TouchableOpacity style={[styles.bookingCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
-                <ThemedView style={styles.bookingHeader}>
-                  <ThemedView style={styles.routeInfo}>
-                    <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
-                      {booking.from} → {booking.to}
-                    </ThemedText>
-                    <ThemedText style={[styles.bookingDate, { color: Colors[colorScheme].text }]}>
-                      {booking.date} • {booking.time}
-                    </ThemedText>
-                  </ThemedView>
-                  <ThemedView style={styles.statusContainer}>
-                    <ThemedView style={[styles.statusBadge, { backgroundColor: getStatusColor(booking.status) + '15' }]}>
-                      <IconSymbol name={getStatusIcon(booking.status)} size={12} color={getStatusColor(booking.status)} />
-                      <ThemedText style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-                        {getStatusText(booking.status)}
+          {bookings.length === 0 ? (
+            <ThemedView style={styles.emptyContainer}>
+              <IconSymbol name="ticket" size={48} color={Colors[colorScheme].icon} />
+              <ThemedText style={[styles.emptyText, { color: Colors[colorScheme].text }]}>
+                Aucune réservation
+              </ThemedText>
+              <ThemedText style={[styles.emptySubtext, { color: Colors[colorScheme].icon }]}>
+                Vous n'avez pas encore de réservations
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            bookings.map((booking) => (
+              <Link key={booking.id} href={`/ride/${booking.rideId}`} asChild>
+                <TouchableOpacity style={[styles.bookingCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
+                  <ThemedView style={styles.bookingHeader}>
+                    <ThemedView style={styles.routeInfo}>
+                      <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
+                        {booking.ride.from} → {booking.ride.to}
+                      </ThemedText>
+                      <ThemedText style={[styles.bookingDate, { color: Colors[colorScheme].text }]}>
+                        {formatDate(booking.ride.date)} • {formatTime(booking.ride.departureTime)}
                       </ThemedText>
                     </ThemedView>
-                  </ThemedView>
-                </ThemedView>
-
-                <ThemedView style={styles.bookingDetails}>
-                  <ThemedView style={styles.driverInfo}>
-                    <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card }]}>
-                      <IconSymbol name="person" size={16} color={Colors[colorScheme].icon} />
-                    </ThemedView>
-                    <ThemedView style={styles.driverDetails}>
-                      <ThemedText style={[styles.driverName, { color: Colors[colorScheme].text }]}>
-                        {booking.driver}
-                      </ThemedText>
-                      <ThemedView style={styles.ratingContainer}>
-                        <IconSymbol name="star" size={12} color="#FFD700" />
-                        <ThemedText style={[styles.rating, { color: Colors[colorScheme].text }]}>
-                          {booking.rating}
+                    <ThemedView style={styles.statusContainer}>
+                      <ThemedView style={[styles.statusBadge, { backgroundColor: getStatusColor(booking.status) + '15' }]}>
+                        <IconSymbol name={getStatusIcon(booking.status)} size={12} color={getStatusColor(booking.status)} />
+                        <ThemedText style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
+                          {getStatusText(booking.status)}
                         </ThemedText>
                       </ThemedView>
                     </ThemedView>
                   </ThemedView>
 
-                  <ThemedView style={styles.bookingFooter}>
-                    <ThemedView style={styles.seatsInfo}>
-                      <IconSymbol name="person" size={14} color={Colors[colorScheme].icon} />
-                      <ThemedText style={[styles.seatsText, { color: Colors[colorScheme].text }]}>
-                        {booking.seats} place{booking.seats > 1 ? 's' : ''}
+                  <ThemedView style={styles.bookingDetails}>
+                    <ThemedView style={styles.driverInfo}>
+                      <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card }]}>
+                        <IconSymbol name="person" size={16} color={Colors[colorScheme].icon} />
+                      </ThemedView>
+                      <ThemedView style={styles.driverDetails}>
+                        <ThemedText style={[styles.driverName, { color: Colors[colorScheme].text }]}>
+                          {booking.ride.driver.name}
+                        </ThemedText>
+                        <ThemedView style={styles.ratingContainer}>
+                          <IconSymbol name="star" size={12} color="#FFD700" />
+                          <ThemedText style={[styles.rating, { color: Colors[colorScheme].text }]}>
+                            {booking.ride.driver.averageRating}
+                          </ThemedText>
+                        </ThemedView>
+                      </ThemedView>
+                    </ThemedView>
+
+                    <ThemedView style={styles.bookingFooter}>
+                      <ThemedView style={styles.seatsInfo}>
+                        <IconSymbol name="person" size={14} color={Colors[colorScheme].icon} />
+                        <ThemedText style={[styles.seatsText, { color: Colors[colorScheme].text }]}>
+                          {booking.seats} place{booking.seats > 1 ? 's' : ''}
+                        </ThemedText>
+                      </ThemedView>
+                      <ThemedText style={[styles.price, { color: Colors[colorScheme].text }]}>
+                        {booking.totalPrice}€
                       </ThemedText>
                     </ThemedView>
-                    <ThemedText style={[styles.price, { color: Colors[colorScheme].text }]}>
-                      {booking.price}€
-                    </ThemedText>
                   </ThemedView>
-                </ThemedView>
-              </TouchableOpacity>
-            </Link>
-          ))}
+                </TouchableOpacity>
+              </Link>
+            ))
+          )}
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -314,5 +327,40 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  emptySubtext: {
+    fontSize: 16,
+    opacity: 0.7,
   },
 }); 

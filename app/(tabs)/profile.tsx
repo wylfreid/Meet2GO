@@ -1,8 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Image, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch } from '@/store';
+import { logout } from '@/store/slices/authSlice';
+import { getUserProfile, getUserStats, updateUserProfile } from '@/store/slices/userSlice';
+
+import * as ImagePicker from 'expo-image-picker';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -10,37 +16,46 @@ import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useApp } from '@/contexts/AppContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { RootState } from '@/store';
+import { uploadProfileImageAsync } from '@/services/firebase';
+import { UserAPI } from '@/services/api';
+import { formatMemberSince } from '@/utils/dateUtils';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { settings, updateSettings } = useApp();
+  const dispatch = useDispatch<AppDispatch>();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const { profile, stats, loading } = useSelector((state: RootState) => state.user);
+  
   const [notifications, setNotifications] = useState({
     email: true,
     sms: false,
     push: true,
   });
   const [language, setLanguage] = useState('fr');
+  const [uploading, setUploading] = useState(false);
 
-  const user = {
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    memberSince: 'Jan 2023',
-    ridesPublished: 12,
-    ridesBooked: 28,
-    rating: 4.9,
-    reviews: 15,
-    avatar: require('@/assets/images/default-avatar.png')
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      await dispatch(getUserProfile()).unwrap();
+      await dispatch(getUserStats()).unwrap();
+    } catch (error) {
+      console.error('Erreur chargement données utilisateur:', error);
+    }
   };
 
   const accountSettings = [
     { id: 'personal', title: 'Informations personnelles', icon: 'person' as const },
-    { id: 'security', title: 'Sécurité', icon: 'lock' as const },
     { id: 'payment', title: 'Méthodes de paiement', icon: 'creditcard.fill' as const },
     { id: 'notifications', title: 'Notifications', icon: 'bell' as const },
   ];
   
   const supportTopics = [
-    { id: 'help', title: 'Centre d\'aide', icon: 'questionmark.circle.fill' as const },
     { id: 'contact', title: 'Nous contacter', icon: 'message' as const },
     { id: 'terms', title: 'Termes et conditions', icon: 'doc.text.fill' as const },
   ];
@@ -56,11 +71,13 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await AsyncStorage.removeItem('auth-token');
-              router.replace('/login');
+              console.log('🔄 Début de la déconnexion depuis le profil...');
+              const result = await dispatch(logout()).unwrap();
+              console.log('✅ Déconnexion réussie:', result);
+              // La navigation sera gérée automatiquement par _layout.tsx
             } catch (error) {
-              console.error('Error during logout:', error);
-              Alert.alert('Erreur', 'Problème lors de la déconnexion');
+              console.error('❌ Erreur lors de la déconnexion:', error);
+              Alert.alert('Erreur', 'Problème lors de la déconnexion. Veuillez réessayer.');
             }
           },
         },
@@ -69,36 +86,104 @@ export default function ProfileScreen() {
   };
 
   const handleSettingPress = (settingId: string) => {
-    switch (settingId) {
-      case 'personal':
-        Alert.alert('Informations personnelles', 'Page en cours de développement');
-        break;
-      case 'security':
-        Alert.alert('Sécurité', 'Page en cours de développement');
-        break;
-      case 'payment':
-        Alert.alert('Méthodes de paiement', 'Page en cours de développement');
-        break;
-      case 'notifications':
-        Alert.alert('Notifications', 'Page en cours de développement');
-        break;
-      case 'help':
-        Alert.alert('Centre d\'aide', 'Page en cours de développement');
-        break;
-      case 'contact':
-        Alert.alert('Nous contacter', 'Page en cours de développement');
-        break;
-      case 'terms':
-        Alert.alert('Termes et conditions', 'Page en cours de développement');
-        break;
-      default:
-        Alert.alert('Paramètre', 'Page en cours de développement');
+    console.log('🔗 Tentative de navigation vers:', settingId);
+    
+    try {
+      // Utiliser un switch pour les routes spécifiques
+      switch (settingId) {
+        case 'personal':
+          console.log('🚀 Navigation vers /settings/personal');
+          router.push('/settings/personal');
+          break;
+        case 'payment':
+          console.log('🚀 Navigation vers /settings/payment');
+          router.push('/settings/payment');
+          break;
+        case 'notifications':
+          console.log('🚀 Navigation vers /settings/notifications');
+          router.push('/settings/notifications');
+          break;
+        case 'contact':
+          console.log('🚀 Navigation vers /settings/contact');
+          router.push('/settings/contact');
+          break;
+        case 'terms':
+          console.log('🚀 Navigation vers /settings/terms');
+          router.push('/settings/terms');
+          break;
+        default:
+          console.log('❌ Route inconnue:', settingId);
+          Alert.alert('Paramètre', 'Page en cours de développement');
+      }
+    } catch (error) {
+      console.error('❌ Erreur de navigation:', error);
+      Alert.alert('Erreur', 'Impossible de naviguer vers cette page');
     }
   };
 
   const handleEditProfile = () => {
-    Alert.alert('Modifier le profil', 'Page en cours de développement');
+    console.log('🚀 Navigation vers /settings/personal');
+    router.push('/settings/personal');
   };
+
+  const handlePickProfilePhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const image = result.assets[0];
+        setUploading(true);
+        try {
+          console.log('�� Upload de l\'image vers Firebase...');
+          
+          // Récupère l'id utilisateur
+          const userId = profile?.uid || user?.uid;
+          console.log('userId utilisé:', userId);
+          if (!userId) throw new Error("Impossible de trouver l'identifiant utilisateur");
+          
+          // Upload direct vers Firebase Storage
+          const photoURL = await uploadProfileImageAsync(image.uri, userId);
+          console.log('✅ Upload Firebase réussi, URL:', photoURL);
+          
+          // Met à jour le backend avec la nouvelle URL
+          const res = await dispatch(updateUserProfile({ avatar: photoURL })).unwrap();
+          console.log('updateUserProfile response:', res);
+          
+          // Recharge le profil
+          await dispatch(getUserProfile()).unwrap();
+          Alert.alert('Succès', 'Photo de profil mise à jour !');
+        } catch (err) {
+          console.error('Erreur upload ou updateUserProfile:', err);
+          Alert.alert('Erreur', 'Impossible de mettre à jour la photo de profil.\n' + (err as Error).message);
+        } finally {
+          setUploading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur sélection image:', error);
+      Alert.alert('Erreur', "Impossible de sélectionner l'image");
+    }
+  };
+
+  // Données utilisateur avec fallback
+  const userData = {
+    name: profile?.name || user?.name || 'Utilisateur',
+    email: profile?.email || user?.email || 'email@example.com',
+    memberSince: formatMemberSince(profile?.createdAt),
+    ridesPublished: stats?.totalRides || 0,
+    ridesBooked: stats?.totalBookings || 0,
+    rating: profile?.rating || 0,
+    reviews: stats?.totalReviews || 0,
+    avatar: profile?.avatar ? { uri: profile.avatar } : require('@/assets/images/default-avatar.png')
+  };
+
+  // Log pour debug
+  console.log('🖼️ Avatar du profil:', profile?.avatar);
+  console.log('🖼️ Avatar affiché:', userData.avatar);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
@@ -106,11 +191,21 @@ export default function ProfileScreen() {
         {/* User Info */}
         <ThemedView style={[styles.userSection, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
           <ThemedView style={styles.userHeader}>
-            <Image source={user.avatar} style={styles.avatar} />
+            <TouchableOpacity onPress={handlePickProfilePhoto} disabled={uploading}>
+              <Image 
+                source={userData.avatar} 
+                style={[styles.avatar, uploading && styles.avatarUploading]} 
+              />
+              {uploading && (
+                <ThemedView style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="large" color={Colors[colorScheme].tint} />
+                </ThemedView>
+              )}
+            </TouchableOpacity>
             <ThemedView style={styles.userInfo}>
-              <ThemedText style={[styles.userName, { color: Colors[colorScheme].text }]}>{user.name}</ThemedText>
-              <ThemedText style={[styles.userEmail, { color: Colors[colorScheme].text }]}>{user.email}</ThemedText>
-              <ThemedText style={[styles.memberSince, { color: Colors[colorScheme].text }]}>Membre depuis {user.memberSince}</ThemedText>
+              <ThemedText style={[styles.userName, { color: Colors[colorScheme].text }]}>{userData.name}</ThemedText>
+              <ThemedText style={[styles.userEmail, { color: Colors[colorScheme].text }]}>{userData.email}</ThemedText>
+              <ThemedText style={[styles.memberSince, { color: Colors[colorScheme].text }]}>Membre depuis {userData.memberSince}</ThemedText>
             </ThemedView>
             <TouchableOpacity onPress={handleEditProfile}>
               <IconSymbol name="pencil" size={25} color={Colors[colorScheme].tint} />
@@ -119,16 +214,16 @@ export default function ProfileScreen() {
 
           <ThemedView style={styles.userStats}>
             <ThemedView style={styles.statItem}>
-              <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{user.ridesPublished}</ThemedText>
+              <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{userData.ridesPublished}</ThemedText>
               <ThemedText style={[styles.statLabel, { color: Colors[colorScheme].text }]}>Trajets publiés</ThemedText>
             </ThemedView>
             <ThemedView style={styles.statItem}>
-              <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{user.ridesBooked}</ThemedText>
+              <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{userData.ridesBooked}</ThemedText>
               <ThemedText style={[styles.statLabel, { color: Colors[colorScheme].text }]}>Trajets réservés</ThemedText>
             </ThemedView>
             <ThemedView style={styles.statItem}>
-              <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{user.rating}</ThemedText>
-              <ThemedText style={[styles.statLabel, { color: Colors[colorScheme].text }]}>Note ({user.reviews} avis)</ThemedText>
+              <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{userData.rating.toFixed(1)}</ThemedText>
+              <ThemedText style={[styles.statLabel, { color: Colors[colorScheme].text }]}>Note ({userData.reviews} avis)</ThemedText>
             </ThemedView>
           </ThemedView>
         </ThemedView>
@@ -200,17 +295,14 @@ export default function ProfileScreen() {
         </ThemedView>
 
         {/* Logout Button */}
-        <ThemedView style={styles.section}> 
-        <TouchableOpacity 
-          style={[styles.settingItem, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}
-          onPress={handleLogout}
-        >
-          <ThemedView style={styles.settingContent}>
-            <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color="#FF3B30" />
-            <ThemedText style={[styles.settingText, { color: '#FF3B30', marginLeft: 10 }]}>Se déconnecter</ThemedText>
-          </ThemedView>
-          <IconSymbol name="chevron.right" size={16} color={Colors[colorScheme].icon} />
-        </TouchableOpacity>
+        <ThemedView style={styles.section}>
+          <TouchableOpacity
+            style={[styles.logoutButton, { backgroundColor: '#dc3545' }]}
+            onPress={handleLogout}
+          >
+            <IconSymbol name="rectangle.portrait.and.arrow.right" size={20} color={Colors[colorScheme].text} />
+            <ThemedText style={styles.logoutButtonText}>Se déconnecter</ThemedText>
+          </TouchableOpacity>
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -232,10 +324,24 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     marginRight: 16,
+  },
+  avatarUploading: {
+    opacity: 0.5,
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 40,
   },
   userInfo: {
     flex: 1,
@@ -244,6 +350,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 4,
+    paddingTop: 15,
   },
   userEmail: {
     fontSize: 16,
@@ -326,5 +433,20 @@ const styles = StyleSheet.create({
   settingText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 10,
   },
 }); 

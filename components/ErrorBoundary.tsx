@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -25,7 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    // Supprimer tous les console.error du fichier
   }
 
   handleRetry = () => {
@@ -34,7 +35,20 @@ export class ErrorBoundary extends Component<Props, State> {
 
   handleGoHome = () => {
     this.setState({ hasError: false, error: undefined });
-    router.replace('/(tabs)');
+    // Vérifier si l'utilisateur est connecté avant de rediriger
+    const checkAuthAndNavigate = async () => {
+      try {
+        const userData = await AsyncStorage.getItem('user-data');
+        if (userData) {
+          router.replace('/(tabs)');
+        } else {
+          router.replace('/login');
+        }
+      } catch (error) {
+        router.replace('/login');
+      }
+    };
+    checkAuthAndNavigate();
   };
 
   render() {

@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useOnboarding } from '@/contexts/OnboardingContext';
 
 const { width } = Dimensions.get('window');
 
@@ -15,7 +16,7 @@ const slides = [
   {
     key: 'slide1',
     title: 'Bienvenue sur Meet2Go',
-    text: 'Trouvez ou proposez un trajet en quelques secondes, partout en France.',
+    text: 'Trouvez ou proposez un trajet en quelques secondes, partout au Cameroun.',
     image: require('../assets/images/illustration1.png'), // Remplace par tes propres images
   },
   {
@@ -36,19 +37,23 @@ export default function OnboardingScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const scrollRef = useRef<ScrollView>(null);
   const [current, setCurrent] = useState(0);
+  const { setOnboardingComplete, setTransitioning } = useOnboarding();
 
   const handleNext = async () => {
     if (current < slides.length - 1) {
       scrollRef.current?.scrollTo({ x: width * (current + 1), animated: true });
-      setCurrent(current + 1);
     } else {
-      // Marquer l'onboarding comme terminé
+      // Marquer l'onboarding comme terminé via le contexte
       try {
-        await AsyncStorage.setItem('onboarding-complete', 'true');
-        router.push('/login');
+        setTransitioning(true);
+        await setOnboardingComplete(true);
+        console.log('✅ Onboarding terminé, navigation vers login');
+        router.replace('/login');
+        setTimeout(() => setTransitioning(false), 500);
       } catch (error) {
+        setTransitioning(false);
         console.error('Error saving onboarding status:', error);
-        router.push('/login');
+        router.replace('/login');
       }
     }
   };
@@ -111,6 +116,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
+    lineHeight: 32,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 16,

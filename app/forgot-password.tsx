@@ -16,6 +16,8 @@ import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { M2GLogo } from '@/components/M2GLogo';
+import { AuthAPI } from '@/services/api';
 
 export default function ForgotPasswordScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -29,9 +31,8 @@ export default function ForgotPasswordScreen() {
     }
 
     setIsLoading(true);
-    
-    // Simulation d'un envoi d'email
-    setTimeout(() => {
+    try {
+      await AuthAPI.forgotPassword(email);
       setIsLoading(false);
       Alert.alert(
         'Email envoyé',
@@ -43,7 +44,14 @@ export default function ForgotPasswordScreen() {
           },
         ]
       );
-    }, 2000);
+    } catch (error: any) {
+      setIsLoading(false);
+      let errorMessage = 'Erreur lors de l\'envoi de l\'email. Veuillez réessayer.';
+      if (error?.message) {
+        errorMessage = error.message;
+      }
+      Alert.alert('Erreur', errorMessage);
+    }
   };
 
   return (
@@ -58,6 +66,9 @@ export default function ForgotPasswordScreen() {
         >
           {/* Header */}
           <ThemedView style={styles.header}>
+          <ThemedView style={[styles.logoContainer, { backgroundColor: 'transparent' }]}>
+              <M2GLogo />
+            </ThemedView>
             <ThemedText style={styles.title}>Mot de passe oublié</ThemedText>
             <ThemedText style={styles.subtitle}>
               Entrez votre adresse email pour recevoir un lien de réinitialisation
@@ -102,13 +113,11 @@ export default function ForgotPasswordScreen() {
             <ThemedText style={[styles.footerText, { color: Colors[colorScheme].icon }]}>
               Vous vous souvenez de votre mot de passe ?{' '}
             </ThemedText>
-            <Link href="/login" asChild>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.back()}>
                 <ThemedText style={[styles.footerLink, { color: Colors[colorScheme].tint }]}>
                   Se connecter
                 </ThemedText>
               </TouchableOpacity>
-            </Link>
           </ThemedView>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -131,6 +140,9 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  logoContainer: {
+    marginBottom: 20,
   },
   backButton: {
     position: 'absolute',

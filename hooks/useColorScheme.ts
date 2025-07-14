@@ -11,6 +11,6 @@ export function useColorScheme(): 'light' | 'dark' {
     return settings.theme;
   } catch (error) {
     // Si AppContext n'est pas disponible, utiliser le thème système
-    return (systemColorScheme as 'light' | 'dark') || 'light';
+    return (systemColorScheme as 'light' | 'dark') || 'dark';
   }
 }

@@ -1,8 +1,9 @@
 import { CustomDateTimePicker } from '@/components/ui/CustomDateTimePicker';
 import { Link } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { GoogleTextInput, LocationInfo } from '@/components/GoogleTextInput';
 import { ThemedText } from '@/components/ThemedText';
@@ -10,55 +11,16 @@ import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
-
-const mockRides = [
-  {
-    id: 1,
-    from: "Toronto",
-    to: "Montreal",
-    date: "Dec 28, 2024",
-    time: "9:00 AM",
-    price: 45,
-    driver: "Sarah M.",
-    rating: 4.9,
-    seats: 3,
-    car: "Honda Civic 2020",
-    image: "/placeholder.svg?height=50&width=50",
-    duration: "5h 30m",
-  },
-  {
-    id: 2,
-    from: "Toronto",
-    to: "Montreal",
-    date: "Dec 28, 2024",
-    time: "2:00 PM",
-    price: 50,
-    driver: "Mike R.",
-    rating: 4.8,
-    seats: 2,
-    car: "Toyota Camry 2019",
-    image: "/placeholder.svg?height=50&width=50",
-    duration: "5h 45m",
-  },
-  {
-    id: 3,
-    from: "Toronto",
-    to: "Montreal",
-    date: "Dec 29, 2024",
-    time: "11:00 AM",
-    price: 40,
-    driver: "Emma L.",
-    rating: 5.0,
-    seats: 4,
-    car: "Nissan Altima 2021",
-    image: "/placeholder.svg?height=50&width=50",
-    duration: "5h 20m",
-  },
-];
+import { searchRides } from '@/store/slices/ridesSlice';
+import { RootState, AppDispatch } from '@/store';
+import { formatFullDate, formatTime } from '@/utils/dateUtils';
 
 export default function SearchScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const [priceRange, setPriceRange] = useState([0, 100]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { rides = [], loading, error } = useSelector((state: RootState) => state.rides);
+  
+  const [priceRange, setPriceRange] = useState([0, 10000]);
   const [sortBy, setSortBy] = useState("price");
   const [showFilters, setShowFilters] = useState(false);
   const [fromLocation, setFromLocation] = useState<LocationInfo | null>(null);
@@ -73,13 +35,39 @@ export default function SearchScreen() {
     { id: 'evening', label: 'Soirée (18h-24h)' },
   ];
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!fromLocation || !toLocation) {
       Alert.alert('Erreur', 'Veuillez saisir les lieux de départ et d\'arrivée');
       return;
     }
-    
-    Alert.alert('Recherche', `Recherche de trajets de ${fromLocation.address} vers ${toLocation.address}`);
+
+    try {
+      const searchParams: any = {
+        from: fromLocation.address,
+        to: toLocation.address,
+        fromLat: fromLocation.latitude,
+        fromLng: fromLocation.longitude,
+        toLat: toLocation.latitude,
+        toLng: toLocation.longitude,
+      };
+
+      if (rideDate) {
+        searchParams.date = rideDate.toISOString().split('T')[0];
+      }
+
+      if (selectedTimeFilter) {
+        searchParams.timeFilter = selectedTimeFilter;
+      }
+
+      if (priceRange[1] < 100) {
+        searchParams.maxPrice = priceRange[1];
+      }
+
+      await dispatch(searchRides(searchParams)).unwrap();
+    } catch (error: any) {
+      console.error('Erreur de recherche:', error);
+      Alert.alert('Erreur', error || 'Erreur lors de la recherche de trajets');
+    }
   };
 
   const handleTimeFilterPress = (filterId: string) => {
@@ -93,6 +81,14 @@ export default function SearchScreen() {
   const handleDateConfirm = (date: Date) => {
     setRideDate(date);
     setPickerVisible(false);
+  };
+
+  const formatRideDate = (dateString: string) => {
+    return formatFullDate(dateString);
+  };
+
+  const formatRideTime = (timeString: string) => {
+    return formatTime(timeString);
   };
 
   return (
@@ -117,21 +113,24 @@ export default function SearchScreen() {
             />
             
             <TouchableOpacity 
-              style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border, paddingVertical: 15 }]}
+              style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border, paddingVertical: 15 }]}
               onPress={() => setPickerVisible(true)}
             >
               <IconSymbol name="calendar" size={20} color={Colors[colorScheme].icon} />
               <ThemedText style={[styles.input, { color: rideDate ? Colors[colorScheme].text : Colors[colorScheme].icon }]}>
-                {rideDate ? rideDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Date'}
+                {rideDate ? rideDate.toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Date'} à {rideDate ? rideDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'Heure'}
               </ThemedText>
             </TouchableOpacity>
             
             <TouchableOpacity 
               style={[styles.searchButton, { backgroundColor: Colors[colorScheme].tint }]}
               onPress={handleSearch}
+              disabled={loading}
             >
               <IconSymbol name="magnifyingglass" size={20} color="white" />
-              <ThemedText style={styles.searchButtonText}>Rechercher</ThemedText>
+              <ThemedText style={styles.searchButtonText}>
+                {loading ? 'Recherche...' : 'Rechercher'}
+              </ThemedText>
             </TouchableOpacity>
           </ThemedView>
         </ThemedView>
@@ -154,7 +153,7 @@ export default function SearchScreen() {
           {showFilters && (
             <ThemedView style={styles.filtersContent}>
               <ThemedText style={styles.filterLabel}>
-                Fourchette de prix: ${priceRange[0]} - ${priceRange[1]}
+                Fourchette de prix: {priceRange[0]} - {priceRange[1]} FCFA
               </ThemedText>
               {/* Price slider would go here */}
               
@@ -166,7 +165,7 @@ export default function SearchScreen() {
                     style={[
                       styles.filterOption,
                       {
-                        backgroundColor: selectedTimeFilter === filter.id ? Colors[colorScheme].tint : Colors[colorScheme].background,
+                        backgroundColor: selectedTimeFilter === filter.id ? Colors[colorScheme].tint : Colors[colorScheme].card,
                         borderColor: Colors[colorScheme].border,
                       },
                       {
@@ -182,13 +181,13 @@ export default function SearchScreen() {
               
               <ThemedText style={styles.filterLabel}>Places disponibles</ThemedText>
               <ThemedView style={styles.filterOptions}>
-                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}>
+                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
                   <ThemedText style={styles.filterOptionText}>1 place</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}>
+                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
                   <ThemedText style={styles.filterOptionText}>2+ places</ThemedText>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}>
+                <TouchableOpacity style={[styles.filterOption, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
                   <ThemedText style={styles.filterOptionText}>3+ places</ThemedText>
                 </TouchableOpacity>
               </ThemedView>
@@ -198,61 +197,84 @@ export default function SearchScreen() {
 
         {/* Results Header */}
         <ThemedView style={styles.resultsHeader}>
-          <ThemedText style={styles.resultsCount}>{mockRides.length} trajets trouvés</ThemedText>
+          <ThemedText style={styles.resultsTitle}>
+            {loading ? 'Recherche en cours...' : `${rides.length} trajets trouvés`}
+          </ThemedText>
+          
           <TouchableOpacity style={styles.sortButton}>
-            <ThemedText style={styles.sortText}>Trier par prix</ThemedText>
-            <IconSymbol name="arrow.up.arrow.down" size={16} color={Colors[colorScheme].icon} />
+            <ThemedText style={[styles.sortButtonText, { color: Colors[colorScheme].tint }]}>
+              Trier par {sortBy === 'price' ? 'prix' : 'heure'}
+            </ThemedText>
+            <IconSymbol name="arrow.up.arrow.down" size={16} color={Colors[colorScheme].tint} />
           </TouchableOpacity>
         </ThemedView>
 
-        {/* Ride Results */}
-        <ThemedView style={styles.resultsContainer}>
-          {mockRides.map((ride) => (
-            <Link href={`/ride/${ride.id}`} key={ride.id} asChild>
-              <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
-                <ThemedView style={styles.rideHeader}>
-                  <ThemedView style={styles.driverInfo}>
-                    <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
-                      <IconSymbol name="person.fill" size={20} color={Colors[colorScheme].icon} />
+        {/* Results */}
+        <ThemedView style={styles.results}>
+          {rides.length === 0 && !loading ? (
+            <ThemedView style={styles.noResults}>
+              <IconSymbol name="magnifyingglass" size={48} color={Colors[colorScheme].icon} />
+              <ThemedText style={[styles.noResultsText, { color: Colors[colorScheme].icon }]}>
+                Aucun trajet trouvé
+              </ThemedText>
+              <ThemedText style={[styles.noResultsSubtext, { color: Colors[colorScheme].icon }]}>
+                Essayez de modifier vos critères de recherche
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            rides.map((ride) => (
+              <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
+                <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
+                  <ThemedView style={styles.rideHeader}>
+                    <ThemedView style={styles.rideInfo}>
+                      <ThemedText style={styles.rideRoute}>
+                        {ride.from} → {ride.to}
+                      </ThemedText>
+                      <ThemedText style={[styles.rideDateTime, { color: Colors[colorScheme].icon }]}>
+                        {formatRideDate(ride.date)} • {formatRideTime(ride.departureTime)}
+                      </ThemedText>
                     </ThemedView>
-                    <ThemedView>
-                      <ThemedText style={styles.driverName}>{ride.driver}</ThemedText>
-                      <ThemedView style={styles.ratingContainer}>
-                        <IconSymbol name="star.fill" size={12} color="#FFD700" />
-                        <ThemedText style={styles.rating}>{ride.rating}</ThemedText>
+                    <ThemedView style={styles.ridePrice}>
+                      <ThemedText style={styles.priceText}>€{ride.pricePerSeat}</ThemedText>
+                      <ThemedText style={[styles.priceLabel, { color: Colors[colorScheme].icon }]}>par place</ThemedText>
+                    </ThemedView>
+                  </ThemedView>
+                  
+                  <ThemedView style={styles.rideDetails}>
+                    <ThemedView style={styles.driverInfo}>
+                      <ThemedView style={styles.avatar}>
+                        <IconSymbol name="person.fill" size={16} color={Colors[colorScheme].icon} />
                       </ThemedView>
-                      <ThemedText style={styles.carInfo}>{ride.car}</ThemedText>
+                      <ThemedView style={styles.driverText}>
+                        <ThemedText style={styles.driverName}>{ride.driver?.name || 'Conducteur'}</ThemedText>
+                        <ThemedView style={styles.ratingContainer}>
+                          <IconSymbol name="star.fill" size={12} color="#FFD700" />
+                          <ThemedText style={[styles.rating, { color: Colors[colorScheme].icon }]}>
+                            {ride.driver?.averageRating || 'N/A'}
+                          </ThemedText>
+                        </ThemedView>
+                      </ThemedView>
+                    </ThemedView>
+                    
+                    <ThemedView style={styles.rideStats}>
+                      <ThemedView style={styles.stat}>
+                        <IconSymbol name="person.2.fill" size={14} color={Colors[colorScheme].icon} />
+                        <ThemedText style={[styles.statText, { color: Colors[colorScheme].icon }]}>
+                          {ride.availableSeats} place{ride.availableSeats > 1 ? 's' : ''}
+                        </ThemedText>
+                      </ThemedView>
+                      <ThemedView style={styles.stat}>
+                        <IconSymbol name="car.fill" size={14} color={Colors[colorScheme].icon} />
+                        <ThemedText style={[styles.statText, { color: Colors[colorScheme].icon }]}>
+                          {ride.carModel || 'Voiture'}
+                        </ThemedText>
+                      </ThemedView>
                     </ThemedView>
                   </ThemedView>
-                  <ThemedView style={styles.priceContainer}>
-                    <ThemedText style={[styles.price, { color: Colors[colorScheme].tint }]}>${ride.price}</ThemedText>
-                    <ThemedText style={styles.priceLabel}>par place</ThemedText>
-                  </ThemedView>
-                </ThemedView>
-
-                <ThemedView style={styles.rideDetails}>
-                  <ThemedView style={styles.routeInfo}>
-                    <IconSymbol name="location" size={16} color={Colors[colorScheme].icon} />
-                    <ThemedText style={styles.routeText}>{ride.from} → {ride.to}</ThemedText>
-                  </ThemedView>
-                  <ThemedView style={styles.routeInfo}>
-                    <IconSymbol name="clock" size={16} color={Colors[colorScheme].icon} />
-                    <ThemedText style={styles.routeText}>
-                      {ride.time} • {ride.duration}
-                    </ThemedText>
-                  </ThemedView>
-                  <ThemedView style={styles.routeInfo}>
-                    <IconSymbol name="person.fill" size={16} color={Colors[colorScheme].icon} />
-                    <ThemedText style={styles.routeText}>{ride.seats} places disponibles</ThemedText>
-                  </ThemedView>
-                </ThemedView>
-
-                <TouchableOpacity style={[styles.viewButton, { backgroundColor: Colors[colorScheme].tint }]}>
-                  <ThemedText style={styles.viewButtonText}>Voir les détails</ThemedText>
                 </TouchableOpacity>
-              </TouchableOpacity>
-            </Link>
-          ))}
+              </Link>
+            ))
+          )}
         </ThemedView>
       </ScrollView>
 
@@ -361,7 +383,7 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     backgroundColor: 'transparent',
   },
-  resultsCount: {
+  resultsTitle: {
     fontSize: 16,
     opacity: 0.7,
   },
@@ -370,15 +392,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  sortText: {
+  sortButtonText: {
     fontSize: 16,
     fontWeight: '500',
   },
-  resultsContainer: {
+  results: {
     padding: 20,
     paddingTop: 0,
     gap: 15,
     backgroundColor: 'transparent',
+  },
+  noResults: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  noResultsText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    opacity: 0.7,
   },
   rideCard: {
     borderRadius: 16,
@@ -392,6 +429,38 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     backgroundColor: 'transparent',
   },
+  rideInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  rideRoute: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  rideDateTime: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  ridePrice: {
+    alignItems: 'flex-end',
+    backgroundColor: 'transparent',
+  },
+  priceText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  priceLabel: {
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  rideDetails: {
+    gap: 10,
+    marginBottom: 15,
+    backgroundColor: 'transparent',
+  },
   driverInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -399,13 +468,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
-  driverAvatar: {
+  avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 0.5,
+  },
+  driverText: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   driverName: {
     fontSize: 16,
@@ -423,44 +496,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
   },
-  carInfo: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  priceContainer: {
-    alignItems: 'flex-end',
-    backgroundColor: 'transparent',
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  priceLabel: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  rideDetails: {
-    gap: 10,
-    marginBottom: 15,
-    backgroundColor: 'transparent',
-  },
-  routeInfo: {
+  rideStats: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: 'transparent',
   },
-  routeText: {
+  stat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'transparent',
+  },
+  statText: {
     fontSize: 14,
     opacity: 0.7,
-  },
-  viewButton: {
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  viewButtonText: {
-    color: 'white',
-    fontWeight: '600',
   },
 }); 

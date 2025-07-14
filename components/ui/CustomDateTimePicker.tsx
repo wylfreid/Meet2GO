@@ -78,8 +78,8 @@ export function CustomDateTimePicker({
 
   const styles = getStyles(colorScheme);
   const calendarTheme = {
-    backgroundColor: Colors[colorScheme].background,
-    calendarBackground: Colors[colorScheme].background,
+    backgroundColor: Colors[colorScheme].card,
+    calendarBackground: Colors[colorScheme].card,
     textSectionTitleColor: '#b6c1cd',
     selectedDayBackgroundColor: Colors[colorScheme].tint,
     selectedDayTextColor: '#ffffff',
@@ -109,7 +109,7 @@ export function CustomDateTimePicker({
       <ThemedView style={styles.centeredView}>
         <ThemedView style={styles.modalView}>
           <ThemedView style={styles.header}>
-            <ThemedText style={styles.headerText}>Select Date & Time</ThemedText>
+            <ThemedText style={styles.headerText}>Sélectionner la date et l'heure</ThemedText>
             <TouchableOpacity onPress={onCancel}>
               <IconSymbol name="xmark" size={24} color={Colors[colorScheme].text} />
             </TouchableOpacity>
@@ -126,7 +126,7 @@ export function CustomDateTimePicker({
           />
 
           <ThemedView style={styles.timeSection}>
-            <ThemedText style={styles.timeTitle}>Time</ThemedText>
+            <ThemedText style={styles.timeTitle}>Heure</ThemedText>
             <ThemedView style={styles.timeInputContainer}>
               <TextInput
                 style={styles.timeInput}
@@ -163,7 +163,7 @@ export function CustomDateTimePicker({
           </ThemedView>
 
           <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-            <ThemedText style={styles.confirmButtonText}>Confirm</ThemedText>
+            <ThemedText style={styles.confirmButtonText}>Confirmer</ThemedText>
           </TouchableOpacity>
         </ThemedView>
       </ThemedView>

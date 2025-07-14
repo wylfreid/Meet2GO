@@ -1,7 +1,11 @@
 import { CustomDateTimePicker } from '@/components/ui/CustomDateTimePicker';
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import * as ImagePicker from 'expo-image-picker';
+import { Picker } from '@react-native-picker/picker';
+import { router } from 'expo-router';
 
 import { GoogleTextInput, LocationInfo } from '@/components/GoogleTextInput';
 import { ThemedText } from '@/components/ThemedText';
@@ -9,6 +13,8 @@ import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { createRide } from '@/store/slices/ridesSlice';
+import { RootState, AppDispatch } from '@/store';
 
 const amenityOptions = [
   "Climatisation", 
@@ -19,9 +25,26 @@ const amenityOptions = [
   "Espace bagages"
 ];
 
+type CustomCheckBoxProps = { value: boolean; onValueChange: (val: boolean) => void };
+
+function CustomCheckBox({ value, onValueChange }: CustomCheckBoxProps) {
+  return (
+    <TouchableOpacity onPress={() => onValueChange(!value)}>
+      <View style={{
+        width: 24, height: 24, borderWidth: 2, borderColor: '#888', borderRadius: 4,
+        backgroundColor: value ? '#007AFF' : '#fff', alignItems: 'center', justifyContent: 'center'
+      }}>
+        {value && <View style={{ width: 12, height: 12, backgroundColor: '#fff', borderRadius: 2 }} />}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function PublishScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const [showSeatsSelector, setShowSeatsSelector] = useState(false);
+  const dispatch = useDispatch<AppDispatch>();
+  const { loading, error } = useSelector((state: RootState) => state.rides);
+  
   const [isDateTimePickerVisible, setDateTimePickerVisibility] = useState(false);
   const [rideDateTime, setRideDateTime] = useState<Date | null>(null);
 
@@ -38,7 +61,18 @@ export default function PublishScreen() {
     amenities: [] as string[],
   });
 
-  const seatOptions = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const [acceptRules, setAcceptRules] = useState(false);
+  const [skipVehicle, setSkipVehicle] = useState(false);
+  const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleType, setVehicleType] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
+  const [vehicleYear, setVehicleYear] = useState('');
+  const [vehiclePlate, setVehiclePlate] = useState('');
+  const [emptySeats, setEmptySeats] = useState('');
+  const [backRowSeats, setBackRowSeats] = useState<'2' | '3'>('2');
+  const [luggage, setLuggage] = useState<'none' | 'S' | 'M' | 'L'>('none');
+  const [bookingPreference, setBookingPreference] = useState<'manual' | 'auto'>('manual');
 
   const handleAmenityChange = (amenity: string, isSelected: boolean) => {
     setFormData(prev => ({
@@ -49,25 +83,117 @@ export default function PublishScreen() {
     }));
   };
 
-  const handleSeatSelection = (seat: string) => {
-    setFormData(prev => ({ ...prev, seats: seat }));
-    setShowSeatsSelector(false);
+  // Vérifier si le formulaire est complet
+  const isFormComplete = () => {
+    return !!(
+      fromLocation && 
+      toLocation && 
+      rideDateTime && 
+      formData.seats && 
+      formData.price && 
+      acceptRules
+    );
   };
 
-  const handleSubmit = () => {
-    if (!fromLocation || !toLocation || !rideDateTime || !formData.seats || !formData.price) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
+  const handleSubmit = async () => {
+    // Validation des champs obligatoires
+    const missingFields = [];
+    if (!fromLocation) missingFields.push('Lieu de départ');
+    if (!toLocation) missingFields.push('Lieu d\'arrivée');
+    if (!rideDateTime) missingFields.push('Date et heure');
+    if (!formData.seats) missingFields.push('Places disponibles');
+    if (!formData.price) missingFields.push('Prix par place');
+    
+    if (missingFields.length > 0) {
+      Alert.alert('Champs manquants', `Veuillez remplir : ${missingFields.join(', ')}`);
       return;
     }
 
-    Alert.alert(
-      'Trajet publié !',
-      `Votre trajet de ${fromLocation.address} vers ${toLocation.address} a été publié avec succès.`,
-      [
-        { text: 'Voir mes trajets', onPress: () => console.log('Navigate to published rides') },
-        { text: 'OK', style: 'default' }
-      ]
-    );
+    // Validation du prix
+    if (parseFloat(formData.price) <= 0) {
+      Alert.alert('Erreur', 'Le prix doit être supérieur à 0');
+      return;
+    }
+
+    // Validation de la date (pas de trajets dans le passé)
+    const now = new Date();
+    if (rideDateTime && rideDateTime <= now) {
+      Alert.alert('Erreur', 'La date et l\'heure du trajet doivent être dans le futur');
+      return;
+    }
+
+    // Validation des coordonnées GPS
+    if (!fromLocation?.latitude || !fromLocation?.longitude || !toLocation?.latitude || !toLocation?.longitude) {
+      Alert.alert('Erreur', 'Veuillez sélectionner des adresses valides avec des coordonnées GPS');
+      return;
+    }
+
+    try {
+      const rideData = {
+        from: fromLocation!.address,
+        to: toLocation!.address,
+        fromLat: fromLocation!.latitude,
+        fromLng: fromLocation!.longitude,
+        toLat: toLocation!.latitude,
+        toLng: toLocation!.longitude,
+        date: rideDateTime!.toISOString().split('T')[0],
+        departureTime: rideDateTime!.toTimeString().split(' ')[0],
+        availableSeats: parseInt(formData.seats),
+        totalSeats: parseInt(formData.seats), // Ajout du totalSeats
+        pricePerSeat: parseFloat(formData.price),
+        description: formData.description,
+        carMake: formData.carMake,
+        carModel: formData.carModel,
+        carYear: formData.carYear,
+        amenities: formData.amenities,
+      };
+
+      const result = await dispatch(createRide(rideData)).unwrap();
+      
+      if (result) {
+        Alert.alert(
+          'Trajet publié !',
+          `Votre trajet de ${fromLocation.address} vers ${toLocation.address} a été publié avec succès.`,
+          [
+            { 
+              text: 'Voir mes trajets', 
+              onPress: () => router.push('/(tabs)/published') 
+            },
+            { text: 'OK', style: 'default' }
+          ]
+        );
+        
+        // Réinitialiser le formulaire
+        setFromLocation(null);
+        setToLocation(null);
+        setRideDateTime(null);
+        setFormData({
+          seats: "",
+          price: "",
+          description: "",
+          carMake: "",
+          carModel: "",
+          carYear: "",
+          amenities: [],
+        });
+      }
+    } catch (error: any) {
+      console.error('Erreur de publication:', error);
+      
+      // Gestion spécifique des erreurs
+      if (error.includes('Crédits insuffisants')) {
+        Alert.alert(
+          'Crédits insuffisants',
+          'Vous devez avoir au moins 5 crédits pour publier un trajet. Vous pouvez acheter des crédits dans votre portefeuille.',
+          [
+            { text: 'Voir mon portefeuille', onPress: () => router.push('/(tabs)/wallet') },
+            { text: 'OK', style: 'default' }
+          ]
+        );
+      } else {
+        Alert.alert('Erreur', error || 'Erreur lors de la publication du trajet');
+      }
+    }
   };
 
   const showDateTimePicker = () => {
@@ -81,6 +207,18 @@ export default function PublishScreen() {
   const handleConfirmDateTime = (date: Date) => {
     setRideDateTime(date);
     hideDateTimePicker();
+  };
+
+  const handlePickVehiclePhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setVehiclePhoto(result.assets[0].uri);
+    }
   };
 
   return (
@@ -120,28 +258,7 @@ export default function PublishScreen() {
             </ThemedView>
             
             <ThemedView style={styles.inputGroup}>
-              <ThemedView style={styles.inputRow}>
-                <ThemedView style={styles.inputContainer}>
-                  <ThemedText style={styles.label}>De</ThemedText>
-                  <TextInput
-                    style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
-                    placeholder="Ville de départ"
-                    placeholderTextColor={Colors[colorScheme].icon}
-                    value={fromLocation?.address || ''}
-                    editable={false}
-                  />
-                </ThemedView>
-                <ThemedView style={styles.inputContainer}>
-                  <ThemedText style={styles.label}>À</ThemedText>
-                  <TextInput
-                    style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
-                    placeholder="Ville de destination"
-                    placeholderTextColor={Colors[colorScheme].icon}
-                    value={toLocation?.address || ''}
-                    editable={false}
-                  />
-                </ThemedView>
-              </ThemedView>
+              
 
               {/* Date and Time */}
               <ThemedView style={[styles.section, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
@@ -151,7 +268,7 @@ export default function PublishScreen() {
                 </ThemedView>
                 <ThemedView style={styles.inputGroup}>
                   <TouchableOpacity
-                    style={[styles.input, styles.dateButton, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
+                    style={[styles.input, styles.dateButton, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}
                     onPress={showDateTimePicker}
                   >
                     <ThemedText style={[styles.dateButtonText, { color: rideDateTime ? Colors[colorScheme].text : Colors[colorScheme].icon }]}>
@@ -176,10 +293,10 @@ export default function PublishScreen() {
                 date={rideDateTime || new Date()}
               />
 
-              <ThemedView style={[styles.inputContainer, styles.textareaContainer]}>
+              <ThemedView style={[styles.inputContainer, styles.textareaContainer, { borderWidth: 0.5, borderColor: Colors[colorScheme].border, backgroundColor: Colors[colorScheme].card }]}>
                 <ThemedText style={styles.label}>Description (optionnel)</ThemedText>
                 <TextInput
-                  style={[styles.textarea, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
+                  style={[styles.textarea, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}
                   placeholder="Parlez de votre trajet, préférences de route, ou notes spéciales..."
                   placeholderTextColor={Colors[colorScheme].icon}
                   value={formData.description}
@@ -199,36 +316,28 @@ export default function PublishScreen() {
             </ThemedView>
             
             <ThemedView style={styles.inputGroup}>
-              <ThemedView style={styles.inputRow}>
-                <ThemedView style={styles.inputContainer}>
+              <ThemedView style={[styles.inputRow, { borderWidth: 0.5, borderColor: Colors[colorScheme].border, backgroundColor: Colors[colorScheme].card }]}>
+                <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card }]}>
                   <ThemedText style={styles.label}>Places disponibles</ThemedText>
-                  <ThemedView style={[styles.selectContainer, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}>
-                    <TouchableOpacity style={styles.selectButton} onPress={() => setShowSeatsSelector(!showSeatsSelector)}>
-                      <ThemedText style={styles.selectText}>
-                        {formData.seats || "Sélectionner"}
-                      </ThemedText>
-                      <IconSymbol name="chevron.right" size={16} color={Colors[colorScheme].icon} />
-                    </TouchableOpacity>
-                    {showSeatsSelector && (
-                      <ThemedView style={[styles.seatsDropdown, { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}>
-                        {seatOptions.map((seat) => (
-                          <TouchableOpacity
-                            key={seat}
-                            style={styles.seatOption}
-                            onPress={() => handleSeatSelection(seat)}
-                          >
-                            <ThemedText style={[styles.seatOptionText, { color: Colors[colorScheme].text }]}>{seat}</ThemedText>
-                          </TouchableOpacity>
-                        ))}
-                      </ThemedView>
-                    )}
-                  </ThemedView>
+
+            <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16 }}>
+              {[1,2,3].map(n => (
+                <TouchableOpacity key={n} style={{
+                  width: 40, height: 40, borderRadius: 20, borderWidth: 2,
+                  borderColor: formData.seats == String(n) ? Colors[colorScheme].tint : Colors[colorScheme].border,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: formData.seats == String(n) ? Colors[colorScheme].tint : Colors[colorScheme].card
+                }} onPress={() => setFormData((prev) => ({ ...prev, seats: String(n) }))}>
+                  <ThemedText style={{ color: formData.seats == String(n) ? '#fff' : Colors[colorScheme].text, fontWeight: 'bold', fontSize: 18 }}>{n}</ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
                 </ThemedView>
-                <ThemedView style={styles.inputContainer}>
-                  <ThemedText style={styles.label}>Prix par place ($)</ThemedText>
+                <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card }]}>
+                  <ThemedText style={styles.label}>Prix par place</ThemedText>
                   <TextInput
-                    style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
-                    placeholder="0"
+                    style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}
+                    placeholder="0.00"
                     placeholderTextColor={Colors[colorScheme].icon}
                     value={formData.price}
                     onChangeText={(text) => setFormData((prev) => ({ ...prev, price: text }))}
@@ -239,88 +348,188 @@ export default function PublishScreen() {
             </ThemedView>
           </ThemedView>
 
-          {/* Vehicle Information */}
+          {/* Car Details */}
           <ThemedView style={[styles.section, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
             <ThemedView style={styles.sectionHeader}>
               <IconSymbol name="car.fill" size={20} color={Colors[colorScheme].tint} />
-              <ThemedText style={styles.sectionTitle}>Informations véhicule</ThemedText>
+              <ThemedText style={styles.sectionTitle}>Détails du véhicule</ThemedText>
             </ThemedView>
-            
-            <ThemedView style={styles.inputGroup}>
-              <ThemedView style={styles.inputRow}>
-                <ThemedView style={styles.inputContainer}>
-                  <ThemedText style={styles.label}>Marque</ThemedText>
-                  <TextInput
-                    style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
-                    placeholder="ex: Honda"
-                    placeholderTextColor={Colors[colorScheme].icon}
-                    value={formData.carMake}
-                    onChangeText={(text) => setFormData((prev) => ({ ...prev, carMake: text }))}
-                  />
-                </ThemedView>
-                <ThemedView style={styles.inputContainer}>
-                  <ThemedText style={styles.label}>Modèle</ThemedText>
-                  <TextInput
-                    style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
-                    placeholder="ex: Civic"
-                    placeholderTextColor={Colors[colorScheme].icon}
-                    value={formData.carModel}
-                    onChangeText={(text) => setFormData((prev) => ({ ...prev, carModel: text }))}
-                  />
-                </ThemedView>
-              </ThemedView>
-              <ThemedView style={[styles.inputContainer, styles.textareaContainer]}>
-                <ThemedText style={styles.label}>Année</ThemedText>
-                <TextInput
-                  style={[styles.input, { color: Colors[colorScheme].text, backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border }]}
-                  placeholder="ex: 2020"
-                  placeholderTextColor={Colors[colorScheme].icon}
-                  value={formData.carYear}
-                  onChangeText={(text) => setFormData((prev) => ({ ...prev, carYear: text }))}
-                  keyboardType="numeric"
-                />
-              </ThemedView>
+            <ThemedText style={{ marginBottom: 10, color: Colors[colorScheme].text, opacity: 0.7 }}>
+              Cela vous aide à obtenir plus de réservations et facilite l'identification de votre véhicule lors du départ.
+            </ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <CustomCheckBox value={skipVehicle} onValueChange={setSkipVehicle} />
+              <ThemedText style={{ marginLeft: 8 }}>Passer</ThemedText>
+            </View>
+            <TouchableOpacity onPress={handlePickVehiclePhoto} disabled={skipVehicle} style={{ marginBottom: 12 }}>
+              {vehiclePhoto ? (
+                <Image source={{ uri: vehiclePhoto }} style={{ width: '100%', height: 120, borderRadius: 10 }} />
+              ) : (
+                <View style={{
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: 120,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: Colors[colorScheme].border,
+                  backgroundColor: Colors[colorScheme].card
+                }}>
+                  <IconSymbol name="car" size={40} color={Colors[colorScheme].icon} />
+                  <ThemedText style={{ color: Colors[colorScheme].icon }}>Ajouter une photo</ThemedText>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TextInput
+              style={[
+                styles.input,
+                { backgroundColor: Colors[colorScheme].card, color: Colors[colorScheme].text, borderColor: Colors[colorScheme].border, marginBottom: 10, padding: 16 }
+              ]}
+              placeholder="e.g. Ford Focus"
+              placeholderTextColor={Colors[colorScheme].icon}
+              value={vehicleModel}
+              onChangeText={setVehicleModel}
+              editable={!skipVehicle}
+            />
+            <ThemedView style={[{ borderWidth: 1, borderColor: Colors[colorScheme].border, borderRadius: 10, paddingHorizontal: 10, marginBottom: 10, backgroundColor: Colors[colorScheme].card }]}>
+            <Picker
+              selectedValue={vehicleType}
+              onValueChange={setVehicleType}
+              enabled={!skipVehicle}
+              style={[
+                {
+                  backgroundColor: Colors[colorScheme].card,
+                  color: Colors[colorScheme].text,
+                  
+                },
+              ]}
+            >
+              
+              <Picker.Item label="Type" value="" />
+              <Picker.Item label="Sedan" value="sedan" />
+              <Picker.Item label="SUV" value="suv" />
+              <Picker.Item label="Hatchback" value="hatchback" />
+              <Picker.Item label="Van" value="van" />
+              <Picker.Item label="Autre" value="other" />
+            </Picker>
             </ThemedView>
+
+            <ThemedView style={[{ borderWidth: 1, borderColor: Colors[colorScheme].border, borderRadius: 10, paddingHorizontal: 10, marginBottom: 10, backgroundColor: Colors[colorScheme].card }]}>
+            <Picker
+              selectedValue={vehicleColor}
+              onValueChange={setVehicleColor}
+              enabled={!skipVehicle}
+              style={
+                {
+                  backgroundColor: Colors[colorScheme].card,
+                  color: Colors[colorScheme].text,
+                }
+              }
+            >
+              <Picker.Item label="Couleur" value="" />
+              <Picker.Item label="Noir" value="black" />
+              <Picker.Item label="Blanc" value="white" />
+              <Picker.Item label="Gris" value="gray" />
+              <Picker.Item label="Bleu" value="blue" />
+              <Picker.Item label="Rouge" value="red" />
+              <Picker.Item label="Autre" value="other" />
+            </Picker>
+            </ThemedView>
+            <TextInput
+              style={[
+                styles.input,
+                { backgroundColor: Colors[colorScheme].card, color: Colors[colorScheme].text, borderColor: Colors[colorScheme].border, marginBottom: 10, padding: 16 }
+              ]}
+              placeholder="YYYY"
+              placeholderTextColor={Colors[colorScheme].icon}
+              value={vehicleYear}
+              onChangeText={setVehicleYear}
+              editable={!skipVehicle}
+              keyboardType="numeric"
+            />
+            <TextInput
+              style={[
+                styles.input,
+                { backgroundColor: Colors[colorScheme].card, color: Colors[colorScheme].text, borderColor: Colors[colorScheme].border, marginBottom: 10, padding: 16 }
+              ]}
+              placeholder="POP 123"
+              placeholderTextColor={Colors[colorScheme].icon}
+              value={vehiclePlate}
+              onChangeText={setVehiclePlate}
+              editable={!skipVehicle}
+            />
           </ThemedView>
 
           {/* Amenities */}
           <ThemedView style={[styles.section, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
             <ThemedView style={styles.sectionHeader}>
-              <IconSymbol name="gearshape.fill" size={20} color={Colors[colorScheme].tint} />
-              <ThemedText style={styles.sectionTitle}>Équipements et fonctionnalités</ThemedText>
+              <IconSymbol name="star.fill" size={20} color={Colors[colorScheme].tint} />
+              <ThemedText style={styles.sectionTitle}>Équipements disponibles</ThemedText>
             </ThemedView>
-            <ThemedView style={styles.amenitiesContainer}>
+            
+            <ThemedView style={[styles.amenitiesGrid, { padding: 10, borderRadius: 10, borderWidth: 0.5, borderColor: Colors[colorScheme].border, backgroundColor: Colors[colorScheme].card }]}>
               {amenityOptions.map((amenity) => (
                 <TouchableOpacity
                   key={amenity}
                   style={[
                     styles.amenityOption,
-                    { backgroundColor: Colors[colorScheme].background, borderColor: Colors[colorScheme].border },
-                    formData.amenities.includes(amenity) && { backgroundColor: Colors[colorScheme].tint + '15', borderColor: Colors[colorScheme].tint }
+                    {
+                      backgroundColor: formData.amenities.includes(amenity) 
+                        ? Colors[colorScheme].tint 
+                        : Colors[colorScheme].card,
+                      borderColor: Colors[colorScheme].border,
+                    },
                   ]}
                   onPress={() => handleAmenityChange(amenity, !formData.amenities.includes(amenity))}
                 >
-                  <ThemedView style={[styles.checkbox,  formData.amenities.includes(amenity)  && { borderColor: Colors[colorScheme].tint }, { borderColor: Colors[colorScheme].tint }]}>
-                    {formData.amenities.includes(amenity) && (
-                      <IconSymbol name="checkmark" size={12} color={Colors[colorScheme].tint} />
-                    )}
-                  </ThemedView>
-                  <ThemedText style={styles.amenityText}>{amenity}</ThemedText>
+                  <ThemedText style={[
+                    styles.amenityText,
+                    { color: formData.amenities.includes(amenity) ? 'white' : Colors[colorScheme].text }
+                  ]}>
+                    {amenity}
+                  </ThemedText>
                 </TouchableOpacity>
               ))}
             </ThemedView>
           </ThemedView>
 
-          {/* Submit Button */}
-          <TouchableOpacity 
-            style={[styles.submitButton, { backgroundColor: Colors[colorScheme].tint }]}
-            onPress={handleSubmit}
-          >
-            <IconSymbol name="paperplane.fill" size={20} color="white" />
-            <ThemedText style={styles.submitButtonText}>Publier le trajet</ThemedText>
-          </TouchableOpacity>
+          {/* Rules when posting a trip */}
+          <View style={{ marginVertical: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <CustomCheckBox value={acceptRules} onValueChange={setAcceptRules} />
+              <ThemedText style={{ marginLeft: 8, flex: 1 }}>
+                J'accepte ces règles, à la <ThemedText style={{ textDecorationLine: 'underline' }}>Politique de résiliation du trajet</ThemedText>, aux <ThemedText style={{ textDecorationLine: 'underline' }}>Conditions d'utilisation</ThemedText> et à la <ThemedText style={{ textDecorationLine: 'underline' }}>Politique de confidentialité</ThemedText>, et <ThemedText style={{ fontWeight: 'bold' }}>je comprends que mon compte pourrait être suspendu si je viole les règles</ThemedText>
+              </ThemedText>
+            </View>
+            <ThemedView style={[styles.costInfo, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
+              <IconSymbol name="info.circle" size={16} color={Colors[colorScheme].tint} />
+              <ThemedText style={[styles.costText, { color: Colors[colorScheme].text }]}>
+                Coût de publication : 5 crédits
+              </ThemedText>
+            </ThemedView>
+          </View>
+
         </ThemedView>
       </ScrollView>
+
+      {/* Bouton principal en bas */}
+      <TouchableOpacity
+        style={[
+          styles.submitButton, 
+          { 
+            backgroundColor: !isFormComplete() ? Colors[colorScheme].icon : Colors[colorScheme].tint,
+            opacity: !isFormComplete() ? 0.5 : 1
+          }
+        ]}
+        onPress={handleSubmit}
+        disabled={loading || !isFormComplete()}
+      >
+        <ThemedText style={[
+          styles.submitButtonText,
+          { color: !isFormComplete() ? Colors[colorScheme].text : 'white' }
+        ]}>
+          {loading ? 'Publication...' : !isFormComplete() ? 'Compléter le formulaire' : 'Publier le trajet'}
+        </ThemedText>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -332,13 +541,11 @@ const styles = StyleSheet.create({
   header: {
     padding: 20,
     paddingTop: 10,
-    alignItems: 'center',
     backgroundColor: 'transparent',
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
@@ -475,5 +682,62 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  seatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  seatText: {
+    fontSize: 16,
+  },
+  cancelButton: {
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  amenitiesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  costInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    gap: 8,
+  },
+  costText: {
+    fontSize: 14,
+    opacity: 0.8,
   },
 }); 

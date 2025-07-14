@@ -33,7 +33,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const defaultSettings: AppSettings = {
-  theme: "light",
+  theme: "dark",
   notifications: {
     email: true,
     sms: false,

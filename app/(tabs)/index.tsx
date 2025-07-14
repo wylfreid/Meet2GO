@@ -1,7 +1,8 @@
 import { Link, router } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { GoogleTextInput, LocationInfo } from '@/components/GoogleTextInput';
 import { ThemedText } from '@/components/ThemedText';
@@ -9,53 +10,78 @@ import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { HomeAPI } from '@/services/api';
+import { RootState, AppDispatch } from '@/store';
 
-const featuredRides = [
-  {
-    id: 1,
-    from: "Toronto",
-    to: "Montreal",
-    date: "Dec 28",
-    time: "9:00 AM",
-    price: 45,
-    driver: "Sarah M.",
-    rating: 4.9,
-    seats: 3,
-  },
-  {
-    id: 2,
-    from: "Vancouver",
-    to: "Calgary",
-    date: "Dec 29",
-    time: "2:00 PM",
-    price: 60,
-    driver: "Mike R.",
-    rating: 4.8,
-    seats: 2,
-  },
-  {
-    id: 3,
-    from: "Ottawa",
-    to: "Quebec City",
-    date: "Dec 30",
-    time: "11:00 AM",
-    price: 35,
-    driver: "Emma L.",
-    rating: 5.0,
-    seats: 4,
-  },
-];
-
-const stats = {
-  trips: "10,000+",
-  rating: "4.8",
-  earnings: "2,500",
-};
+// Définition du type Ride
+interface Ride {
+  id: string;
+  from: { address: string };
+  to: { address: string };
+  date: string;
+  departureTime: string;
+  pricePerSeat: number;
+  availableSeats: number;
+  driver?: {
+    name?: string;
+    averageRating?: string | number;
+  };
+}
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const dispatch = useDispatch<AppDispatch>();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const { unreadCount } = useSelector((state: RootState) => state.notifications);
+  
   const [fromLocation, setFromLocation] = useState<LocationInfo | null>(null);
   const [toLocation, setToLocation] = useState<LocationInfo | null>(null);
+  const [featuredRides, setFeaturedRides] = useState<Ride[]>([]);
+  const [stats, setStats] = useState({
+    totalRides: "0",
+    totalUsers: "0",
+    averageRating: "0.0",
+    totalBookings: "0",
+    totalEarnings: "0",
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadHomeData();
+  }, []);
+
+  const loadHomeData = async () => {
+    try {
+      setLoading(true);
+      
+      // Charger les trajets populaires
+      const featuredData = await HomeAPI.getFeaturedRides();
+      setFeaturedRides(featuredData?.data.rides || []);
+
+      // Charger les statistiques
+      const statsData = await HomeAPI.getStats();
+      setStats(statsData?.data || {
+        totalRides: "0",
+        totalUsers: "0",
+        averageRating: "0.0",
+        totalBookings: "0",
+        totalEarnings: "0",
+      });
+    } catch (error) {
+      console.error('Erreur chargement données accueil:', error);
+      // Utiliser des données vides en cas d'erreur
+      setFeaturedRides([]);
+      setStats({
+        totalRides: "0",
+        totalUsers: "0",
+        averageRating: "0.0",
+        totalBookings: "0",
+        totalEarnings: "0",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearch = () => {
     if (!fromLocation || !toLocation) {
@@ -71,13 +97,20 @@ export default function HomeScreen() {
         {/* Header */}
         <ThemedView style={styles.header}>
           <ThemedView>
-            <ThemedText style={styles.greeting}>Bonjour !</ThemedText>
+            <ThemedText style={styles.greeting}>Bonjour {user?.name || '!'}</ThemedText>
             <ThemedText style={styles.subtitle}>Où voulez-vous aller aujourd'hui ?</ThemedText>
           </ThemedView>
           <Link href="/notifications" asChild>
               <TouchableOpacity style={[styles.actionCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
                 <ThemedView style={[styles.actionIcon2, { backgroundColor: Colors[colorScheme].card }]}>
                   <IconSymbol name="bell" size={24} color={Colors[colorScheme].tint} />
+                  {unreadCount > 0 && (
+                    <ThemedView style={[styles.notificationBadge, { backgroundColor: '#ef4444' }]}>
+                      <ThemedText style={styles.badgeText}>
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </ThemedText>
+                    </ThemedView>
+                  )}
                 </ThemedView>
               </TouchableOpacity>
             </Link>
@@ -127,7 +160,7 @@ export default function HomeScreen() {
             <Link href="/published" asChild>
               <TouchableOpacity style={[styles.actionCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
                 <ThemedView style={[styles.actionIcon, { backgroundColor: Colors[colorScheme].card }]}>
-                  <IconSymbol name="car" size={24} color={Colors[colorScheme].tint} />
+                  <IconSymbol name="clock.arrow.circlepath" size={24} color={Colors[colorScheme].tint} />
                 </ThemedView>
                 <ThemedText style={[styles.actionTitle, { color: Colors[colorScheme].text }]}>Mes trajets publiés</ThemedText>
               </TouchableOpacity>
@@ -147,38 +180,49 @@ export default function HomeScreen() {
           </ThemedView>
           
           <ThemedView style={styles.ridesContainer}>
-            {featuredRides.map((ride) => (
-              <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
-                <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
-                  <ThemedView style={styles.rideHeader}>
-                    <ThemedView style={styles.routeInfo}>
-                      <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>{ride.from} → {ride.to}</ThemedText>
-                      <ThemedText style={[styles.rideDate, { color: Colors[colorScheme].text }]}>{ride.date} • {ride.time}</ThemedText>
-                    </ThemedView>
-                    <ThemedText style={[styles.ridePrice, { color: Colors[colorScheme].text }]}>{ride.price}€</ThemedText>
-                  </ThemedView>
-                  
-                  <ThemedView style={styles.rideFooter}>
-                    <ThemedView style={styles.driverInfo}>
-                      <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card }]}>
-                        <IconSymbol name="person" size={12} color={Colors[colorScheme].icon} />
+            {loading ? (
+              <ThemedText style={[styles.loadingText, { color: Colors[colorScheme].text }]}>Chargement des trajets...</ThemedText>
+            ) : featuredRides.length > 0 ? (
+              featuredRides.map((ride) => (
+                <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
+                  <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
+                    <ThemedView style={styles.rideHeader}>
+                      <ThemedView style={styles.routeInfo}>
+                        <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>{ride.from.address} → {ride.to.address}</ThemedText>
+                        <ThemedText style={[styles.rideDate, { color: Colors[colorScheme].text }]}>{ride.date} • {ride.departureTime}</ThemedText>
                       </ThemedView>
-                      <ThemedText style={[styles.driverName, { color: Colors[colorScheme].text }]}>{ride.driver}</ThemedText>
-                      <ThemedView style={styles.ratingContainer}>
-                        <IconSymbol name="star" size={12} color="#FFD700" />
-                        <ThemedText style={[styles.rating, { color: Colors[colorScheme].text }]}>{ride.rating}</ThemedText>
+                      <ThemedText style={[styles.ridePrice, { color: Colors[colorScheme].text }]}>{ride.pricePerSeat}€</ThemedText>
+                    </ThemedView>
+                    
+                    <ThemedView style={styles.rideFooter}>
+                      <ThemedView style={styles.driverInfo}>
+                        <ThemedView style={[styles.driverAvatar, { backgroundColor: Colors[colorScheme].card }]}>
+                          <IconSymbol name="person" size={12} color={Colors[colorScheme].icon} />
+                        </ThemedView>
+                        <ThemedText style={[styles.driverName, { color: Colors[colorScheme].text }]}>{ride.driver?.name || 'Conducteur'}</ThemedText>
+                        <ThemedView style={styles.ratingContainer}>
+                          <IconSymbol name="star" size={12} color="#FFD700" />
+                          <ThemedText style={[styles.rating, { color: Colors[colorScheme].text }]}>{ride.driver?.averageRating || 'N/A'}</ThemedText>
+                        </ThemedView>
+                      </ThemedView>
+                      <ThemedView style={styles.seatsInfo}>
+                        <IconSymbol name="person.3" size={14} color={Colors[colorScheme].icon} />
+                        <ThemedText style={[styles.seatsText, { color: Colors[colorScheme].text }]}>{ride.availableSeats} places</ThemedText>
                       </ThemedView>
                     </ThemedView>
-                    <ThemedView style={styles.seatsInfo}>
-                      <IconSymbol name="person.3" size={14} color={Colors[colorScheme].icon} />
-                      <ThemedText style={[styles.seatsText, { color: Colors[colorScheme].text }]}>{ride.seats} places</ThemedText>
-      </ThemedView>
-      </ThemedView>
-                </TouchableOpacity>
-              </Link>
-            ))}
-      </ThemedView>
-      </ThemedView>
+                  </TouchableOpacity>
+                </Link>
+              ))
+            ) : (
+              <ThemedView style={styles.noRidesContainer}>
+                <IconSymbol name="magnifyingglass" size={48} color={Colors[colorScheme].icon} />
+                <ThemedText style={[styles.noResultsText, { color: Colors[colorScheme].icon }]}>
+                  Aucun trajet trouvé
+                </ThemedText>
+              </ThemedView>
+            )}
+          </ThemedView>
+        </ThemedView>
       </ScrollView>
     </SafeAreaView>
   );
@@ -312,6 +356,8 @@ const styles = StyleSheet.create({
   ridesContainer: {
     gap: 12,
     backgroundColor: 'transparent',
+    flex: 1,
+    minHeight: 200,
   },
   rideCard: {
     padding: 16,
@@ -407,5 +453,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.6,
     textAlign: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  noRidesText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  noRidesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    gap: 10,
+    minHeight: 200,
+  },
+  noResultsText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  noRidesImage: {
+    width: 150,
+    height: 150,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });

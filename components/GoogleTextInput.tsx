@@ -4,15 +4,15 @@ import { Feather } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import React, { useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Modal,
-    SafeAreaView,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  SafeAreaView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from "./ThemedText";
@@ -267,7 +267,8 @@ const getStyles = (colorScheme: 'light' | 'dark') => StyleSheet.create({
         fontSize: 16
     },
     clearButton: {
-        padding: 4
+        padding: 4,
+        marginRight: 10
     },
     currentLocationButton: {
         flexDirection: 'row',

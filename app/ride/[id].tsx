@@ -1,6 +1,7 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -8,77 +9,63 @@ import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useApp } from '@/contexts/AppContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-
-// Mock data - in a real app, this would come from an API
-const rideData = {
-  id: 1,
-  from: "Toronto",
-  to: "Montreal",
-  date: "28 décembre 2024",
-  time: "9:00",
-  price: 45,
-  duration: "5h 30m",
-  seats: 3,
-  driver: {
-    name: "Sarah Mitchell",
-    rating: 4.9,
-    reviews: 127,
-    joinDate: "2019",
-    image: "/placeholder.svg?height=80&width=80",
-    verified: true,
-    bio: "Conductrice expérimentée qui aime rencontrer de nouvelles personnes. Je fais régulièrement cette route pour le travail et j'aime partager le voyage !",
-  },
-  car: {
-    make: "Honda",
-    model: "Civic",
-    year: "2020",
-    color: "Argent",
-    plate: "ABC 123",
-  },
-  route: [
-    { location: "Centre-ville Toronto", time: "9:00" },
-    { location: "Aire de repos Highway 401", time: "11:30" },
-    { location: "Centre-ville Montreal", time: "14:30" },
-  ],
-  amenities: ["Climatisation", "Musique", "Chargeur téléphone", "Animaux acceptés"],
-  policies: ["Non-fumeur", "Max 1 bagage par personne", "Être à l'heure"],
-};
+import { getRideById, bookRide } from '@/store/slices/ridesSlice';
+import { RootState, AppDispatch } from '@/store';
 
 export default function RideDetailsScreen() {
   const { id } = useLocalSearchParams();
   const colorScheme = useColorScheme();
   const theme = colorScheme ?? 'light';
   const { credits, deductCredits } = useApp();
+  const dispatch = useDispatch<AppDispatch>();
+  const { currentRide, loading, error } = useSelector((state: RootState) => state.rides);
   const [isBooking, setIsBooking] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
 
+  useEffect(() => {
+    if (id) {
+      dispatch(getRideById(id as string));
+    }
+  }, [id, dispatch]);
+
   const handleBooking = async () => {
-    if (credits < rideData.price) {
+    if (!currentRide) return;
+
+    if (credits < currentRide.pricePerSeat) {
       Alert.alert("Crédits insuffisants", "Vous n'avez pas assez de crédits pour cette réservation.");
       return;
     }
 
     setIsBooking(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      const success = deductCredits(rideData.price, `Réservation: ${rideData.from} → ${rideData.to}`);
+    try {
+      const result = await dispatch(bookRide({
+        rideId: currentRide.id,
+        seats: 1,
+        totalPrice: currentRide.pricePerSeat
+      })).unwrap();
       
-      if (success) {
-        Alert.alert(
-          "Réservation confirmée !",
-          `Votre trajet de ${rideData.from} vers ${rideData.to} a été réservé.`,
-          [
-            { text: "Voir mes réservations", onPress: () => router.push('/bookings') },
-            { text: "OK", style: "default" }
-          ]
-        );
-      } else {
-        Alert.alert("Erreur", "Impossible de finaliser la réservation. Veuillez réessayer.");
+      if (result) {
+        const success = deductCredits(currentRide.pricePerSeat, `Réservation: ${currentRide.from} → ${currentRide.to}`);
+        
+        if (success) {
+          Alert.alert(
+            "Réservation confirmée !",
+            `Votre trajet de ${currentRide.from} vers ${currentRide.to} a été réservé.`,
+            [
+              { text: "Voir mes réservations", onPress: () => router.push('/bookings') },
+              { text: "OK", style: "default" }
+            ]
+          );
+        } else {
+          Alert.alert("Erreur", "Impossible de finaliser la réservation. Veuillez réessayer.");
+        }
       }
-      
+    } catch (error: any) {
+      Alert.alert("Erreur", error || "Erreur lors de la réservation");
+    } finally {
       setIsBooking(false);
-    }, 1500);
+    }
   };
 
   const handleFavorite = () => {
@@ -91,15 +78,65 @@ export default function RideDetailsScreen() {
     );
   };
 
-  if (!rideData) {
-    return <ThemedText>Chargement...</ThemedText>;
+  if (loading) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: Colors[theme].background }]}>
+        <Stack.Screen 
+          options={{ 
+            title: "Chargement...",
+            headerShown: true,
+          }} 
+        />
+        <ThemedView style={styles.loadingContainer}>
+          <ThemedText style={[styles.loadingText, { color: Colors[theme].text }]}>
+            Chargement du trajet...
+          </ThemedText>
+        </ThemedView>
+      </ThemedView>
+    );
   }
+
+  if (error || !currentRide) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: Colors[theme].background }]}>
+        <Stack.Screen 
+          options={{ 
+            title: "Erreur",
+            headerShown: true,
+          }} 
+        />
+        <ThemedView style={styles.errorContainer}>
+          <IconSymbol name="exclamationmark.triangle" size={48} color="#ef4444" />
+          <ThemedText style={[styles.errorText, { color: Colors[theme].text }]}>
+            {error || "Trajet non trouvé"}
+          </ThemedText>
+        </ThemedView>
+      </ThemedView>
+    );
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
+  const formatTime = (timeString: string) => {
+    const date = new Date(`2000-01-01T${timeString}`);
+    return date.toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: Colors[theme].background }]}>
       <Stack.Screen 
         options={{ 
-          title: `${rideData.from} → ${rideData.to}`,
+          title: `${currentRide.from} → ${currentRide.to}`,
           headerShown: true,
         }} 
       />
@@ -111,19 +148,19 @@ export default function RideDetailsScreen() {
           <ThemedView style={styles.overviewGrid}>
             <ThemedView style={styles.overviewItem}>
               <IconSymbol name="calendar" size={24} color={Colors[theme].tint} />
-              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{rideData.date}</ThemedText>
+              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{formatDate(currentRide.date)}</ThemedText>
             </ThemedView>
             <ThemedView style={styles.overviewItem}>
               <IconSymbol name="clock" size={24} color={Colors[theme].tint} />
-              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{rideData.time}</ThemedText>
+              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{formatTime(currentRide.departureTime)}</ThemedText>
             </ThemedView>
             <ThemedView style={styles.overviewItem}>
               <IconSymbol name="dollarsign.circle" size={24} color={Colors[theme].tint} />
-              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>${rideData.price} / place</ThemedText>
+              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{currentRide.pricePerSeat}€ / place</ThemedText>
             </ThemedView>
             <ThemedView style={styles.overviewItem}>
               <IconSymbol name="person.3" size={24} color={Colors[theme].tint} />
-              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{rideData.seats} places</ThemedText>
+              <ThemedText style={[styles.overviewText, { color: Colors[theme].text }]}>{currentRide.availableSeats} places</ThemedText>
             </ThemedView>
           </ThemedView>
         </ThemedView>
@@ -136,8 +173,8 @@ export default function RideDetailsScreen() {
               <IconSymbol name="person" size={24} color={Colors[theme].icon} />
             </ThemedView>
             <ThemedView style={styles.driverInfo}>
-              <ThemedText style={[styles.driverName, { color: Colors[theme].text }]}>{rideData.driver.name}</ThemedText>
-              {rideData.driver.verified && (
+              <ThemedText style={[styles.driverName, { color: Colors[theme].text }]}>{currentRide.driver?.name || 'Conducteur'}</ThemedText>
+              {currentRide.driver?.verified && (
                 <ThemedView style={styles.verifiedBadge}>
                   <IconSymbol name="checkmark" size={12} color="#10b981" />
                   <ThemedText style={styles.verifiedText}>Vérifié</ThemedText>
@@ -145,7 +182,9 @@ export default function RideDetailsScreen() {
               )}
               <ThemedView style={styles.ratingContainer}>
                 <IconSymbol name="star" size={16} color="#FFD700" />
-                <ThemedText style={[styles.rating, { color: Colors[theme].text }]}>{rideData.driver.rating} ({rideData.driver.reviews} avis)</ThemedText>
+                <ThemedText style={[styles.rating, { color: Colors[theme].text }]}>
+                  {currentRide.driver?.averageRating || 'N/A'} ({currentRide.driver?.reviews || 0} avis)
+                </ThemedText>
               </ThemedView>
             </ThemedView>
           </ThemedView>
@@ -155,91 +194,99 @@ export default function RideDetailsScreen() {
         <ThemedView style={[styles.routeCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
           <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Itinéraire</ThemedText>
           <ThemedView style={styles.routeInfo}>
-            {rideData.route.map((stop, index) => (
-              <ThemedView key={index} style={styles.routeItem}>
-                <ThemedView style={styles.routeMarker}>
-                  <ThemedView style={[styles.routeDot, { backgroundColor: index === 0 ? '#28a745' : index === rideData.route.length - 1 ? '#dc3545' : Colors[theme].tint }]} />
-                  {index < rideData.route.length - 1 && <ThemedView style={styles.routeLine} />}
-                </ThemedView>
-                <ThemedView style={styles.routeDetails}>
-                  <ThemedText style={[styles.routeTime, { color: Colors[theme].text }]}>{stop.time}</ThemedText>
-                  <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{stop.location}</ThemedText>
-                </ThemedView>
+            <ThemedView style={styles.routeItem}>
+              <ThemedView style={styles.routeMarker}>
+                <ThemedView style={[styles.routeDot, { backgroundColor: '#28a745' }]} />
+                <ThemedView style={styles.routeLine} />
               </ThemedView>
-            ))}
+              <ThemedView style={styles.routeDetails}>
+                <ThemedText style={[styles.routeTime, { color: Colors[theme].text }]}>{formatTime(currentRide.departureTime)}</ThemedText>
+                <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{currentRide.from}</ThemedText>
+              </ThemedView>
+            </ThemedView>
+            <ThemedView style={styles.routeItem}>
+              <ThemedView style={styles.routeMarker}>
+                <ThemedView style={[styles.routeDot, { backgroundColor: '#dc3545' }]} />
+              </ThemedView>
+              <ThemedView style={styles.routeDetails}>
+                <ThemedText style={[styles.routeTime, { color: Colors[theme].text }]}>Arrivée</ThemedText>
+                <ThemedText style={[styles.routeLocation, { color: Colors[theme].text }]}>{currentRide.to}</ThemedText>
+              </ThemedView>
+            </ThemedView>
           </ThemedView>
         </ThemedView>
 
         {/* Amenities Card */}
-        <ThemedView style={[styles.amenitiesCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
-          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Équipements</ThemedText>
-          <ThemedView style={styles.amenitiesList}>
-            {rideData.amenities.map((amenity, index) => (
-              <ThemedView key={index} style={[styles.amenityItem, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}>
-                <IconSymbol name="checkmark" size={16} color={Colors[theme].tint} />
-                <ThemedText style={[styles.amenityText, { color: Colors[theme].text }]}>{amenity}</ThemedText>
-              </ThemedView>
-            ))}
+        {currentRide.amenities && currentRide.amenities.length > 0 && (
+          <ThemedView style={[styles.amenitiesCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
+            <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Équipements</ThemedText>
+            <ThemedView style={styles.amenitiesList}>
+              {currentRide.amenities.map((amenity: string, index: number) => (
+                <ThemedView key={index} style={[styles.amenityItem, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}>
+                  <IconSymbol name="checkmark" size={16} color={Colors[theme].tint} />
+                  <ThemedText style={[styles.amenityText, { color: Colors[theme].text }]}>{amenity}</ThemedText>
+                </ThemedView>
+              ))}
+            </ThemedView>
           </ThemedView>
-        </ThemedView>
+        )}
         
         {/* Vehicle Card */}
-        <ThemedView style={[styles.detailsCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
-          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Véhicule</ThemedText>
-          <ThemedView style={styles.carInfo}>
-            <ThemedView style={[styles.carImage, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}>
-              <IconSymbol name="car" size={32} color={Colors[theme].icon} />
-            </ThemedView>
-            <ThemedView style={styles.carDetails}>
-              <ThemedText style={[styles.carModel, { color: Colors[theme].text }]}>{rideData.car.year} {rideData.car.make} {rideData.car.model}</ThemedText>
-              <ThemedText style={[styles.carDetailsText, { color: Colors[theme].text }]}>{rideData.car.color} • {rideData.car.plate}</ThemedText>
-            </ThemedView>
-          </ThemedView>
-        </ThemedView>
-
-        {/* Policies Card */}
-        <ThemedView style={[styles.detailsCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
-          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Règles du trajet</ThemedText>
-          <ThemedView style={styles.policiesList}>
-            {rideData.policies.map((policy, index) => (
-              <ThemedView key={index} style={styles.policyItem}>
-                <IconSymbol name="info.circle" size={20} color={Colors[theme].icon} />
-                <ThemedText style={[styles.policyText, { color: Colors[theme].text }]}>{policy}</ThemedText>
+        {(currentRide.carMake || currentRide.carModel) && (
+          <ThemedView style={[styles.detailsCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
+            <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Véhicule</ThemedText>
+            <ThemedView style={styles.carInfo}>
+              <ThemedView style={[styles.carImage, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}>
+                <IconSymbol name="car" size={32} color={Colors[theme].icon} />
               </ThemedView>
-            ))}
+              <ThemedView style={styles.carDetails}>
+                <ThemedText style={[styles.carModel, { color: Colors[theme].text }]}>
+                  {currentRide.carYear} {currentRide.carMake} {currentRide.carModel}
+                </ThemedText>
+                <ThemedText style={[styles.carDetailsText, { color: Colors[theme].text }]}>
+                  {currentRide.carColor || 'Couleur non spécifiée'}
+                </ThemedText>
+              </ThemedView>
+            </ThemedView>
           </ThemedView>
-        </ThemedView>
-        
-        {/* Booking Section */}
-        <ThemedView style={[styles.bookingSection, { backgroundColor: Colors[theme].background, borderTopColor: Colors[theme].border }]}>
-          <ThemedView style={styles.bookingPrice}>
-            <ThemedText style={[styles.priceText, { color: Colors[theme].text }]}>${rideData.price}</ThemedText>
-            <ThemedText style={[styles.priceLabel, { color: Colors[theme].text }]}> / place</ThemedText>
+        )}
+
+        {/* Description Card */}
+        {currentRide.description && (
+          <ThemedView style={[styles.detailsCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
+            <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Description</ThemedText>
+            <ThemedText style={[styles.descriptionText, { color: Colors[theme].text }]}>
+              {currentRide.description}
+            </ThemedText>
           </ThemedView>
-          <ThemedView style={styles.bookingActions}>
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                { backgroundColor: Colors[theme].tint },
-                (isBooking || credits < rideData.price) && { opacity: 0.6 }
-              ]}
-              onPress={handleBooking}
-              disabled={isBooking || credits < rideData.price}
-            >
-              <IconSymbol name="cart" size={20} color="white" />
-              <ThemedText style={styles.primaryButtonText}>
-                {isBooking ? "Réservation..." : credits < rideData.price ? "Crédits insuffisants" : "Réserver ce trajet"}
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.secondaryButton, { borderColor: Colors[theme].border }]} onPress={handleFavorite}>
-              <IconSymbol 
-                name={isFavorite ? "heart.fill" : "heart"} 
-                size={20} 
-                color={isFavorite ? "#ef4444" : Colors[theme].tint} 
-              />
-              <ThemedText style={[styles.secondaryButtonText, { color: Colors[theme].text }]}>Favoris</ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
+        )}
+
+        {/* Action Buttons */}
+        <ThemedView style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.favoriteButton, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}
+            onPress={handleFavorite}
+          >
+            <IconSymbol 
+              name={isFavorite ? "heart.fill" : "heart"} 
+              size={24} 
+              color={isFavorite ? "#ef4444" : Colors[theme].icon} 
+            />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.bookButton,
+              { backgroundColor: Colors[theme].tint },
+              isBooking && { opacity: 0.7 }
+            ]}
+            onPress={handleBooking}
+            disabled={isBooking}
+          >
+            <ThemedText style={styles.bookButtonText}>
+              {isBooking ? 'Réservation...' : `Réserver (${currentRide.pricePerSeat}€)`}
+            </ThemedText>
+          </TouchableOpacity>
         </ThemedView>
       </ScrollView>
     </ThemedView>
@@ -453,70 +500,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
   },
-  policiesList: {
-    gap: 12,
-    backgroundColor: 'transparent',
-  },
-  policyItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    backgroundColor: 'transparent',
-  },
-  policyText: {
+  descriptionText: {
     fontSize: 14,
-    flex: 1,
     opacity: 0.7,
   },
-  bookingSection: {
+  actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
     borderTopWidth: 0.5,
   },
-  bookingPrice: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    backgroundColor: 'transparent',
-  },
-  priceText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  priceLabel: {
-    fontSize: 14,
-    opacity: 0.6,
-  },
-  bookingActions: {
-    flexDirection: 'row',
-    gap: 12,
-    backgroundColor: 'transparent',
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-  },
-  primaryButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
+  favoriteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
     borderRadius: 12,
     borderWidth: 0.5,
+  },
+  bookButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
     gap: 8,
   },
-  secondaryButtonText: {
+  bookButtonText: {
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginTop: 20,
   },
 }); 

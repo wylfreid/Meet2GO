@@ -229,6 +229,7 @@ const MAPPING = {
   'clock.fill': 'access-time',
   'person.2.fill': 'group',
   'person.2': 'group',
+  'clock.arrow.circlepath': 'access-time',
 } as unknown as IconMapping;
 
 /**

@@ -1,58 +1,25 @@
 import { Link } from 'expo-router';
-import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { getNotifications, markAsRead, markAllAsRead } from '@/store/slices/notificationsSlice';
+import { RootState, AppDispatch } from '@/store';
 
 export default function NotificationsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'booking',
-      title: 'Réservation confirmée',
-      message: 'Votre réservation pour le trajet Toronto → Montreal a été confirmée',
-      time: 'Il y a 2h',
-      read: false,
-    },
-    {
-      id: 2,
-      type: 'ride',
-      title: 'Nouveau passager',
-      message: 'Marie L. a réservé une place dans votre trajet Ottawa → Quebec',
-      time: 'Il y a 4h',
-      read: false,
-    },
-    {
-      id: 3,
-      type: 'payment',
-      title: 'Paiement reçu',
-      message: 'Vous avez reçu 45€ pour votre trajet Vancouver → Calgary',
-      time: 'Il y a 1j',
-      read: true,
-    },
-    {
-      id: 4,
-      type: 'reminder',
-      title: 'Rappel de trajet',
-      message: 'Votre trajet Toronto → Montreal part dans 30 minutes',
-      time: 'Il y a 1j',
-      read: true,
-    },
-    {
-      id: 5,
-      type: 'review',
-      title: 'Nouvel avis',
-      message: 'Sarah M. vous a laissé un avis 5 étoiles',
-      time: 'Il y a 2j',
-      read: true,
-    },
-  ]);
+  const dispatch = useDispatch<AppDispatch>();
+  const { notifications = [], unreadCount, loading, error } = useSelector((state: RootState) => state.notifications);
+
+  useEffect(() => {
+    dispatch(getNotifications({}));
+  }, [dispatch]);
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -88,19 +55,68 @@ export default function NotificationsScreen() {
     }
   };
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(prev => prev.map(notification => ({ ...notification, read: true })));
-    Alert.alert('Succès', 'Toutes les notifications ont été marquées comme lues');
+  const handleMarkAllAsRead = async () => {
+    try {
+      await dispatch(markAllAsRead()).unwrap();
+      Alert.alert('Succès', 'Toutes les notifications ont été marquées comme lues');
+    } catch (error: any) {
+      Alert.alert('Erreur', error || 'Erreur lors du marquage des notifications');
+    }
   };
 
-  const handleNotificationPress = (notification: any) => {
+  const handleNotificationPress = async (notification: any) => {
     if (!notification.read) {
-      setNotifications(prev => 
-        prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
-      );
+      try {
+        await dispatch(markAsRead(notification.id)).unwrap();
+      } catch (error: any) {
+        console.error('Erreur lors du marquage comme lu:', error);
+      }
     }
     Alert.alert(notification.title, notification.message);
   };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) {
+      return 'À l\'instant';
+    } else if (diffInMinutes < 60) {
+      return `Il y a ${diffInMinutes} min`;
+    } else if (diffInMinutes < 1440) {
+      const hours = Math.floor(diffInMinutes / 60);
+      return `Il y a ${hours}h`;
+    } else {
+      const days = Math.floor(diffInMinutes / 1440);
+      return `Il y a ${days}j`;
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
+        <ThemedView style={styles.loadingContainer}>
+          <ThemedText style={[styles.loadingText, { color: Colors[colorScheme].text }]}>
+            <ActivityIndicator size="large" color={Colors[colorScheme].tint} />
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
+        <ThemedView style={styles.errorContainer}>
+          <IconSymbol name="exclamationmark.triangle" size={48} color="#ef4444" />
+          <ThemedText style={[styles.errorText, { color: Colors[colorScheme].text }]}>
+            Erreur: {error}
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
@@ -118,41 +134,53 @@ export default function NotificationsScreen() {
         </ThemedView>
 
         <ThemedView style={styles.notificationsContainer}>
-          {notifications.map((notification) => (
-            <TouchableOpacity 
-              key={notification.id} 
-              style={[
-                styles.notificationItem, 
-                { 
-                  backgroundColor: notification.read ? Colors[colorScheme].cardSecondary : Colors[colorScheme].card,
-                  borderColor: Colors[colorScheme].border 
-                }
-              ]}
-              onPress={() => handleNotificationPress(notification)}
-            >
-              <ThemedView style={[styles.notificationIcon, { backgroundColor: getNotificationColor(notification.type) + '15' }]}>
-                <IconSymbol 
-                  name={getNotificationIcon(notification.type)} 
-                  size={20} 
-                  color={getNotificationColor(notification.type)} 
-                />
-              </ThemedView>
-              <ThemedView style={styles.notificationContent}>
-                <ThemedText style={[styles.notificationTitle, { color: Colors[colorScheme].text }]}>
-                  {notification.title}
-                </ThemedText>
-                <ThemedText style={[styles.notificationMessage, { color: Colors[colorScheme].text }]}>
-                  {notification.message}
-                </ThemedText>
-                <ThemedText style={[styles.notificationTime, { color: Colors[colorScheme].text }]}>
-                  {notification.time}
-                </ThemedText>
-              </ThemedView>
-              {!notification.read && (
-                <ThemedView style={[styles.unreadDot, { backgroundColor: Colors[colorScheme].tint }]} />
-              )}
-            </TouchableOpacity>
-          ))}
+          {notifications.length === 0 ? (
+            <ThemedView style={styles.emptyContainer}>
+              <IconSymbol name="bell" size={48} color={Colors[colorScheme].icon} />
+              <ThemedText style={[styles.emptyText, { color: Colors[colorScheme].text }]}>
+                Aucune notification
+              </ThemedText>
+              <ThemedText style={[styles.emptySubtext, { color: Colors[colorScheme].icon }]}>
+                Vous n'avez pas encore de notifications
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            notifications.map((notification) => (
+              <TouchableOpacity 
+                key={notification.id} 
+                style={[
+                  styles.notificationItem, 
+                  { 
+                    backgroundColor: notification.read ? Colors[colorScheme].cardSecondary : Colors[colorScheme].card,
+                    borderColor: Colors[colorScheme].border 
+                  }
+                ]}
+                onPress={() => handleNotificationPress(notification)}
+              >
+                <ThemedView style={[styles.notificationIcon, { backgroundColor: getNotificationColor(notification.type) + '15' }]}>
+                  <IconSymbol 
+                    name={getNotificationIcon(notification.type)} 
+                    size={20} 
+                    color={getNotificationColor(notification.type)} 
+                  />
+                </ThemedView>
+                <ThemedView style={styles.notificationContent}>
+                  <ThemedText style={[styles.notificationTitle, { color: Colors[colorScheme].text }]}>
+                    {notification.title}
+                  </ThemedText>
+                  <ThemedText style={[styles.notificationMessage, { color: Colors[colorScheme].text }]}>
+                    {notification.message}
+                  </ThemedText>
+                  <ThemedText style={[styles.notificationTime, { color: Colors[colorScheme].text }]}>
+                    {formatTime(notification.createdAt)}
+                  </ThemedText>
+                </ThemedView>
+                {!notification.read && (
+                  <ThemedView style={[styles.unreadDot, { backgroundColor: Colors[colorScheme].tint }]} />
+                )}
+              </TouchableOpacity>
+            ))
+          )}
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -229,5 +257,38 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginLeft: 8,
     marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    opacity: 0.7,
   },
 }); 

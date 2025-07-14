@@ -8,9 +8,11 @@ import {
     ScrollView,
     StyleSheet,
     TextInput,
-    TouchableOpacity
+    TouchableOpacity,
+    ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { M2GLogo } from '@/components/M2GLogo';
 import { ThemedText } from '@/components/ThemedText';
@@ -18,13 +20,18 @@ import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { login } from '@/store/slices/authSlice';
+import { RootState, AppDispatch } from '@/store';
+import { auth, signInWithEmailAndPassword } from '@/services/firebase';
 
 export default function LoginScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const dispatch = useDispatch<AppDispatch>();
+  const { loading, error } = useSelector((state: RootState) => state.auth);
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -32,31 +39,21 @@ export default function LoginScreen() {
       return;
     }
 
-    setIsLoading(true);
-    
-    // Simulation d'une connexion
-    setTimeout(async () => {
+    try {
+      const result = await dispatch(login({ email, password })).unwrap();
+      // Connexion Firebase
       try {
-        // Simuler une réponse de l'API
-        const mockApiResponse = {
-          token: 'fake-auth-token-12345',
-          user: {
-            email,
-            name: 'John Doe',
-          },
-        };
-
-        await AsyncStorage.setItem('auth-token', mockApiResponse.token);
-        await AsyncStorage.setItem('user-data', JSON.stringify(mockApiResponse.user));
-
-        router.replace('/(tabs)');
-      } catch (error) {
-        console.error('Login failed:', error);
-        Alert.alert('Erreur', 'La connexion a échoué. Veuillez réessayer.');
-      } finally {
-        setIsLoading(false);
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (firebaseError) {
+        console.warn('Erreur Firebase Auth:', firebaseError);
+        Alert.alert('Avertissement', "Connexion à Firebase échouée, mais connexion backend réussie. Certaines fonctionnalités (upload photo) peuvent être limitées.");
       }
-    }, 2000); // Simuler une latence réseau de 2s
+      // La navigation sera gérée automatiquement par _layout.tsx
+    } catch (error: any) {
+      // Afficher directement le message d'erreur du backend
+      const errorMessage = error || 'La connexion a échoué. Veuillez réessayer.';
+      Alert.alert('Erreur de connexion', errorMessage);
+    }
   };
 
   const handleGoogleLogin = () => {
@@ -88,7 +85,7 @@ export default function LoginScreen() {
 
           {/* Login Form */}
           <ThemedView style={styles.form}>
-            <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card }]}>
+            <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
               <IconSymbol name="envelope.fill" size={20} color={Colors[colorScheme].icon} />
               <TextInput
                 style={[styles.input, { color: Colors[colorScheme].text }]}
@@ -102,7 +99,7 @@ export default function LoginScreen() {
               />
             </ThemedView>
 
-            <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card }]}>
+            <ThemedView style={[styles.inputContainer, { backgroundColor: Colors[colorScheme].card, borderColor: Colors[colorScheme].border }]}>
               <IconSymbol name="lock.fill" size={20} color={Colors[colorScheme].icon} />
               <TextInput
                 style={[styles.input, { color: Colors[colorScheme].text }]}
@@ -134,13 +131,13 @@ export default function LoginScreen() {
               style={[
                 styles.loginButton, 
                 { backgroundColor: Colors[colorScheme].tint },
-                isLoading && { opacity: 0.7 }
+                loading && { opacity: 0.7 }
               ]} 
               onPress={handleLogin}
-              disabled={isLoading}
+              disabled={loading}
             >
-              {isLoading ? (
-                <ThemedText style={styles.loginButtonText}>Connexion...</ThemedText>
+              {loading ? (
+                <ActivityIndicator color="white" size="small" />
               ) : (
                 <ThemedText style={styles.loginButtonText}>Se connecter</ThemedText>
               )}

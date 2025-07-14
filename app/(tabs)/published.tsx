@@ -1,66 +1,27 @@
 import { Link } from 'expo-router';
+import { useEffect } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { getUserRides, clearRides } from '@/store/slices/ridesSlice';
+import { RootState, AppDispatch } from '@/store';
 
 export default function PublishedScreen() {
   const colorScheme = useColorScheme() ?? 'light';
+  const dispatch = useDispatch<AppDispatch>();
+  const { userRides = [], loading, error } = useSelector((state: RootState) => state.rides);
 
-  const publishedRides = [
-    {
-      id: 1,
-      from: "Toronto",
-      to: "Montreal",
-      date: "28 décembre 2024",
-      time: "9:00",
-      price: 45,
-      status: "active",
-      seats: 4,
-      bookedSeats: 2,
-      earnings: 90,
-    },
-    {
-      id: 2,
-      from: "Vancouver",
-      to: "Calgary",
-      date: "30 décembre 2024",
-      time: "14:00",
-      price: 60,
-      status: "active",
-      seats: 3,
-      bookedSeats: 1,
-      earnings: 60,
-    },
-    {
-      id: 3,
-      from: "Ottawa",
-      to: "Quebec City",
-      date: "25 décembre 2024",
-      time: "11:00",
-      price: 35,
-      status: "completed",
-      seats: 4,
-      bookedSeats: 4,
-      earnings: 140,
-    },
-    {
-      id: 4,
-      from: "Edmonton",
-      to: "Winnipeg",
-      date: "20 décembre 2024",
-      time: "8:00",
-      price: 55,
-      status: "cancelled",
-      seats: 3,
-      bookedSeats: 0,
-      earnings: 0,
-    },
-  ];
+  useEffect(() => {
+    // Nettoyer les erreurs précédentes
+    dispatch(clearRides());
+    dispatch(getUserRides());
+  }, [dispatch]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -101,8 +62,55 @@ export default function PublishedScreen() {
     }
   };
 
-  const totalEarnings = publishedRides.reduce((sum, ride) => sum + ride.earnings, 0);
-  const activeRides = publishedRides.filter(ride => ride.status === 'active').length;
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  };
+
+  const formatTime = (timeString: string) => {
+    const date = new Date(`2000-01-01T${timeString}`);
+    return date.toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  const calculateEarnings = (ride: any) => {
+    const bookedSeats = ride.totalSeats - ride.availableSeats;
+    return bookedSeats * ride.pricePerSeat;
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
+        <ThemedView style={styles.loadingContainer}>
+          <ThemedText style={[styles.loadingText, { color: Colors[colorScheme].text }]}>
+            Chargement de vos trajets...
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
+        <ThemedView style={styles.errorContainer}>
+          <IconSymbol name="exclamationmark.triangle" size={48} color="#ef4444" />
+          <ThemedText style={[styles.errorText, { color: Colors[colorScheme].text }]}>
+            Erreur: {error}
+          </ThemedText>
+        </ThemedView>
+      </SafeAreaView>
+    );
+  }
+
+  const totalEarnings = userRides.reduce((sum, ride) => sum + calculateEarnings(ride), 0);
+  const activeRides = userRides.filter(ride => ride.status === 'active').length;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme].background }]}>
@@ -116,7 +124,7 @@ export default function PublishedScreen() {
           <ThemedView style={styles.headerContent}>
             <ThemedText style={[styles.title, { color: Colors[colorScheme].text }]}>Mes trajets publiés</ThemedText>
             <ThemedText style={[styles.subtitle, { color: Colors[colorScheme].text }]}>
-              {publishedRides.length} trajet{publishedRides.length > 1 ? 's' : ''} publié{publishedRides.length > 1 ? 's' : ''}
+              {userRides.length} trajet{userRides.length > 1 ? 's' : ''} publié{userRides.length > 1 ? 's' : ''}
             </ThemedText>
           </ThemedView>
         </ThemedView>
@@ -130,69 +138,86 @@ export default function PublishedScreen() {
           </ThemedView>
           <ThemedView style={[styles.statCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
             <IconSymbol name="dollarsign.circle" size={24} color={Colors[colorScheme].tint} />
-            <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{totalEarnings}€</ThemedText>
+            <ThemedText style={[styles.statNumber, { color: Colors[colorScheme].text }]}>{totalEarnings} FCFA</ThemedText>
             <ThemedText style={[styles.statLabel, { color: Colors[colorScheme].text }]}>Gains totaux</ThemedText>
           </ThemedView>
         </ThemedView>
 
         <ThemedView style={styles.ridesContainer}>
-          {publishedRides.map((ride) => (
-            <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
-              <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
-                <ThemedView style={styles.rideHeader}>
-                  <ThemedView style={styles.routeInfo}>
-                    <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
-                      {ride.from} → {ride.to}
-                    </ThemedText>
-                    <ThemedText style={[styles.rideDate, { color: Colors[colorScheme].text }]}>
-                      {ride.date} • {ride.time}
-                    </ThemedText>
-                  </ThemedView>
-                  <ThemedView style={styles.statusContainer}>
-                    <ThemedView style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '15' }]}>
-                      <IconSymbol name={getStatusIcon(ride.status)} size={12} color={getStatusColor(ride.status)} />
-                      <ThemedText style={[styles.statusText, { color: getStatusColor(ride.status) }]}>
-                        {getStatusText(ride.status)}
-                      </ThemedText>
+          {userRides.length === 0 ? (
+            <ThemedView style={styles.emptyContainer}>
+              <IconSymbol name="clock.arrow.circlepath" size={48} color={Colors[colorScheme].icon} />
+              <ThemedText style={[styles.emptyText, { color: Colors[colorScheme].text }]}>
+                Aucun trajet publié
+              </ThemedText>
+              <ThemedText style={[styles.emptySubtext, { color: Colors[colorScheme].icon }]}>
+                Publiez votre premier trajet pour commencer
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            userRides.map((ride) => {
+              const bookedSeats = ride.totalSeats - ride.availableSeats;
+              const earnings = calculateEarnings(ride);
+              
+              return (
+                <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
+                  <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
+                    <ThemedView style={styles.rideHeader}>
+                      <ThemedView style={styles.routeInfo}>
+                        <ThemedText style={[styles.routeText, { color: Colors[colorScheme].text }]}>
+                          {ride.from} → {ride.to}
+                        </ThemedText>
+                        <ThemedText style={[styles.rideDate, { color: Colors[colorScheme].text }]}>
+                          {formatDate(ride.date)} • {formatTime(ride.departureTime)}
+                        </ThemedText>
+                      </ThemedView>
+                      <ThemedView style={styles.statusContainer}>
+                        <ThemedView style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '15' }]}>
+                          <IconSymbol name={getStatusIcon(ride.status)} size={12} color={getStatusColor(ride.status)} />
+                          <ThemedText style={[styles.statusText, { color: getStatusColor(ride.status) }]}>
+                            {getStatusText(ride.status)}
+                          </ThemedText>
+                        </ThemedView>
+                      </ThemedView>
                     </ThemedView>
-                  </ThemedView>
-                </ThemedView>
 
-                <ThemedView style={styles.rideDetails}>
-                  <ThemedView style={styles.seatsInfo}>
-                    <ThemedView style={styles.seatsContainer}>
-                      <IconSymbol name="person.3" size={16} color={Colors[colorScheme].icon} />
-                      <ThemedText style={[styles.seatsText, { color: Colors[colorScheme].text }]}>
-                        {ride.bookedSeats}/{ride.seats} places réservées
-                      </ThemedText>
-                    </ThemedView>
-                    <ThemedView style={styles.progressBar}>
-                      <ThemedView 
-                        style={[
-                          styles.progressFill, 
-                          { 
-                            width: `${(ride.bookedSeats / ride.seats) * 100}%`,
-                            backgroundColor: Colors[colorScheme].tint 
-                          }
-                        ]} 
-                      />
-                    </ThemedView>
-                  </ThemedView>
+                    <ThemedView style={styles.rideDetails}>
+                      <ThemedView style={styles.seatsInfo}>
+                        <ThemedView style={styles.seatsContainer}>
+                          <IconSymbol name="person.3" size={16} color={Colors[colorScheme].icon} />
+                          <ThemedText style={[styles.seatsText, { color: Colors[colorScheme].text }]}>
+                            {bookedSeats}/{ride.totalSeats} places réservées
+                          </ThemedText>
+                        </ThemedView>
+                        <ThemedView style={styles.progressBar}>
+                          <ThemedView 
+                            style={[
+                              styles.progressFill, 
+                              { 
+                                width: `${(bookedSeats / ride.totalSeats) * 100}%`,
+                                backgroundColor: Colors[colorScheme].tint 
+                              }
+                            ]} 
+                          />
+                        </ThemedView>
+                      </ThemedView>
 
-                  <ThemedView style={styles.rideFooter}>
-                    <ThemedView style={styles.priceInfo}>
-                      <ThemedText style={[styles.priceLabel, { color: Colors[colorScheme].text }]}>Prix par place</ThemedText>
-                      <ThemedText style={[styles.price, { color: Colors[colorScheme].text }]}>{ride.price}€</ThemedText>
+                      <ThemedView style={styles.rideFooter}>
+                        <ThemedView style={styles.priceInfo}>
+                          <ThemedText style={[styles.priceLabel, { color: Colors[colorScheme].text }]}>Prix par place</ThemedText>
+                          <ThemedText style={[styles.price, { color: Colors[colorScheme].text }]}>{ride.pricePerSeat}€</ThemedText>
+                        </ThemedView>
+                        <ThemedView style={styles.earningsInfo}>
+                          <ThemedText style={[styles.earningsLabel, { color: Colors[colorScheme].text }]}>Gains</ThemedText>
+                          <ThemedText style={[styles.earnings, { color: Colors[colorScheme].text }]}>{earnings}€</ThemedText>
+                        </ThemedView>
+                      </ThemedView>
                     </ThemedView>
-                    <ThemedView style={styles.earningsInfo}>
-                      <ThemedText style={[styles.earningsLabel, { color: Colors[colorScheme].text }]}>Gains</ThemedText>
-                      <ThemedText style={[styles.earnings, { color: Colors[colorScheme].text }]}>{ride.earnings}€</ThemedText>
-                    </ThemedView>
-                  </ThemedView>
-                </ThemedView>
-              </TouchableOpacity>
-            </Link>
-          ))}
+                  </TouchableOpacity>
+                </Link>
+              );
+            })
+          )}
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -354,5 +379,40 @@ const styles = StyleSheet.create({
   earnings: {
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    opacity: 0.7,
   },
 }); 
