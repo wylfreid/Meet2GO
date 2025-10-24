@@ -7,9 +7,8 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
-import { useApp } from '@/contexts/AppContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { getRideById, bookRide } from '@/store/slices/ridesSlice';
+import { getRideById } from '@/store/slices/ridesSlice';
 import { RootState, AppDispatch } from '@/store';
 
 // Fonction utilitaire pour gérer l'affichage de l'avatar
@@ -20,15 +19,13 @@ const getDriverAvatar = (driver: any) => {
   return require('@/assets/images/default-avatar.png');
 };
 
-export default function PassengerRideDetailsScreen() {
+export default function DriverRideDetailsScreen() {
   const { id } = useLocalSearchParams();
   const colorScheme = useColorScheme();
   const theme = colorScheme ?? 'light';
-  const { credits, deductCredits } = useApp();
   const dispatch = useDispatch<AppDispatch>();
   const { currentRide, loading, error } = useSelector((state: RootState) => state.rides);
-  const [isBooking, setIsBooking] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -36,57 +33,70 @@ export default function PassengerRideDetailsScreen() {
     }
   }, [id, dispatch]);
 
-  const handleBooking = async () => {
+  const handleCancelRide = async () => {
     if (!currentRide) return;
 
-    // Coût en crédits pour une réservation (fixe, pas lié au prix du trajet)
-    const bookingCost = 1; // 1 crédit par réservation
-
-    if (credits < bookingCost) {
-      Alert.alert("Crédits insuffisants", "Vous n'avez pas assez de crédits pour cette réservation. Vous avez besoin de 1 crédit.");
-      return;
-    }
-
-    setIsBooking(true);
-    
-    try {
-      const result = await dispatch(bookRide({
-        rideId: currentRide.id,
-        seats: 1,
-        totalPrice: currentRide.pricePerSeat // Le prix reste pour le backend mais n'affecte pas les crédits
-      })).unwrap();
-      
-      if (result) {
-        const success = deductCredits(bookingCost, `Réservation: ${currentRide.from?.address || currentRide.from} → ${currentRide.to?.address || currentRide.to}`);
-        
-        if (success) {
-          Alert.alert(
-            "Réservation confirmée !",
-            `Votre trajet de ${currentRide.from?.address || currentRide.from} vers ${currentRide.to?.address || currentRide.to} a été réservé pour 1 crédit.`,
-            [
-              { text: "Voir mes réservations", onPress: () => router.push('/bookings') },
-              { text: "OK", style: "default" }
-            ]
-          );
-        } else {
-          Alert.alert("Erreur", "Impossible de finaliser la réservation. Veuillez réessayer.");
+    Alert.alert(
+      "Annuler le trajet",
+      "Êtes-vous sûr de vouloir annuler ce trajet ? Cette action ne peut pas être annulée.",
+      [
+        { text: "Non", style: "cancel" },
+        { 
+          text: "Oui, annuler", 
+          style: "destructive",
+          onPress: async () => {
+            setIsCancelling(true);
+            try {
+              // TODO: Implémenter l'annulation du trajet
+              Alert.alert("Trajet annulé", "Votre trajet a été annulé avec succès.");
+            } catch (error: any) {
+              Alert.alert("Erreur", error || "Erreur lors de l'annulation");
+            } finally {
+              setIsCancelling(false);
+            }
+          }
         }
-      }
-    } catch (error: any) {
-      Alert.alert("Erreur", error || "Erreur lors de la réservation");
-    } finally {
-      setIsBooking(false);
-    }
+      ]
+    );
   };
 
-  const handleFavorite = () => {
-    setIsFavorite(!isFavorite);
-    Alert.alert(
-      isFavorite ? "Retiré des favoris" : "Ajouté aux favoris",
-      isFavorite 
-        ? "Ce trajet a été retiré de vos favoris" 
-        : "Ce trajet a été ajouté à vos favoris"
-    );
+  const handleEditRide = () => {
+    if (!currentRide) return;
+
+    const bookedSeats = currentRide.totalSeats - currentRide.availableSeats;
+    const hasReservations = bookedSeats > 0;
+
+    if (hasReservations) {
+      // Si il y a des réservations, on limite les modifications
+      Alert.alert(
+        "Modification limitée",
+        "Ce trajet a des réservations. Vous pouvez uniquement modifier :\n\n• La description\n• Les équipements\n• Les informations du véhicule\n\nLes modifications de l'itinéraire, de la date/heure et du prix ne sont pas autorisées pour éviter de perturber les passagers.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { 
+            text: "Modifier les détails", 
+            onPress: () => {
+              router.push(`/ride/edit-limited/${currentRide.id}`);
+            }
+          }
+        ]
+      );
+    } else {
+      // Si pas de réservations, modification complète autorisée
+      Alert.alert(
+        "Modification complète",
+        "Ce trajet n'a pas de réservations. Vous pouvez modifier tous les détails du trajet.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { 
+            text: "Modifier le trajet", 
+            onPress: () => {
+              router.push(`/ride/edit/${currentRide.id}`);
+            }
+          }
+        ]
+      );
+    }
   };
 
   if (loading) {
@@ -143,11 +153,14 @@ export default function PassengerRideDetailsScreen() {
     });
   };
 
+  const bookedSeats = currentRide.totalSeats - currentRide.availableSeats;
+  const totalEarnings = bookedSeats * currentRide.pricePerSeat;
+
   return (
     <ThemedView style={[styles.container, { backgroundColor: Colors[theme].background }]}>
       <Stack.Screen 
         options={{ 
-          title: `Détails du trajet`,
+          title: `${currentRide.from?.address || currentRide.from} → ${currentRide.to?.address || currentRide.to}`,
           headerShown: true,
         }} 
       />
@@ -176,32 +189,34 @@ export default function PassengerRideDetailsScreen() {
           </ThemedView>
         </ThemedView>
 
-        {/* Driver Card */}
-        <ThemedView style={[styles.driverCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
-          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Conducteur</ThemedText>
-          <ThemedView style={styles.driverHeader}>
-            <Image 
-              source={getDriverAvatar(currentRide.driver)}
-              style={[styles.driverAvatar, { borderColor: Colors[theme].border }]}
-            />
-            <ThemedView style={styles.driverInfo}>
-              <ThemedText style={[styles.driverName, { color: Colors[theme].text }]}>{currentRide.driver?.name || 'Conducteur'}</ThemedText>
-              {currentRide.driver?.verified && (
-                <ThemedView style={styles.verifiedBadge}>
-                  <IconSymbol name="checkmark" size={12} color="#10b981" />
-                  <ThemedText style={styles.verifiedText}>Vérifié</ThemedText>
-                </ThemedView>
-              )}
-              <ThemedView style={styles.ratingContainer}>
-                <IconSymbol name="star" size={16} color="#FFD700" />
-                <ThemedText style={[styles.rating, { color: Colors[theme].text }]}>
-                  {currentRide.driver?.averageRating || 'N/A'} ({currentRide.driver?.reviews || 0} avis)
-                </ThemedText>
-              </ThemedView>
+        {/* Earnings Card */}
+        <ThemedView style={[styles.earningsCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
+          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Gains</ThemedText>
+          <ThemedView style={styles.earningsGrid}>
+            <ThemedView style={styles.earningsItem}>
+              <IconSymbol name="person.3" size={20} color={Colors[theme].tint} />
+              <ThemedText style={[styles.earningsLabel, { color: Colors[theme].text }]}>Places réservées</ThemedText>
+              <ThemedText style={[styles.earningsValue, { color: Colors[theme].tint }]}>{bookedSeats}/{currentRide.totalSeats}</ThemedText>
+            </ThemedView>
+            <ThemedView style={styles.earningsItem}>
+              <IconSymbol name="dollarsign.circle" size={20} color={Colors[theme].tint} />
+              <ThemedText style={[styles.earningsLabel, { color: Colors[theme].text }]}>Gains totaux</ThemedText>
+              <ThemedText style={[styles.earningsValue, { color: Colors[theme].tint }]}>{totalEarnings} FCFA</ThemedText>
             </ThemedView>
           </ThemedView>
+          <ThemedView style={styles.progressBar}>
+            <ThemedView 
+              style={[
+                styles.progressFill, 
+                { 
+                  width: `${(bookedSeats / currentRide.totalSeats) * 100}%`,
+                  backgroundColor: Colors[theme].tint 
+                }
+              ]} 
+            />
+          </ThemedView>
         </ThemedView>
-        
+
         {/* Route Card */}
         <ThemedView style={[styles.routeCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
           <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Itinéraire</ThemedText>
@@ -243,21 +258,6 @@ export default function PassengerRideDetailsScreen() {
           </ThemedView>
         </ThemedView>
 
-        {/* Amenities Card */}
-        {currentRide.amenities && currentRide.amenities.length > 0 && (
-          <ThemedView style={[styles.amenitiesCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
-            <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Équipements</ThemedText>
-            <ThemedView style={styles.amenitiesList}>
-              {currentRide.amenities.map((amenity: string, index: number) => (
-                <ThemedView key={index} style={[styles.amenityItem, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}>
-                  <IconSymbol name="checkmark" size={16} color={Colors[theme].tint} />
-                  <ThemedText style={[styles.amenityText, { color: Colors[theme].text }]}>{amenity}</ThemedText>
-                </ThemedView>
-              ))}
-            </ThemedView>
-          </ThemedView>
-        )}
-        
         {/* Vehicle Card */}
         {(currentRide.carMake || currentRide.carModel) && (
           <ThemedView style={[styles.detailsCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
@@ -288,50 +288,58 @@ export default function PassengerRideDetailsScreen() {
           </ThemedView>
         )}
 
-        {/* Payment Info Card */}
-        <ThemedView style={[styles.paymentCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
-          <ThemedText style={[styles.cardTitle, { color: Colors[theme].text }]}>Informations de paiement</ThemedText>
-          <ThemedView style={styles.paymentInfo}>
-            <ThemedView style={styles.paymentItem}>
-              <IconSymbol name="creditcard" size={20} color={Colors[theme].tint} />
-              <ThemedText style={[styles.paymentLabel, { color: Colors[theme].text }]}>Coût de réservation</ThemedText>
-              <ThemedText style={[styles.paymentValue, { color: Colors[theme].tint }]}>1 crédit</ThemedText>
+        {/* Edit Status Card */}
+        {bookedSeats > 0 && (
+          <ThemedView style={[styles.editStatusCard, { backgroundColor: Colors[theme].cardSecondary, borderColor: Colors[theme].border }]}>
+            <ThemedView style={styles.editStatusHeader}>
+              <IconSymbol name="info.circle" size={20} color="#f59e0b" />
+              <ThemedText style={[styles.editStatusTitle, { color: Colors[theme].text }]}>
+                Modification limitée
+              </ThemedText>
             </ThemedView>
-            <ThemedView style={styles.paymentItem}>
-              <IconSymbol name="dollarsign.circle" size={20} color={Colors[theme].icon} />
-              <ThemedText style={[styles.paymentLabel, { color: Colors[theme].text }]}>Paiement au conducteur</ThemedText>
-              <ThemedText style={[styles.paymentValue, { color: Colors[theme].text }]}>{currentRide.pricePerSeat} FCFA</ThemedText>
-            </ThemedView>
+            <ThemedText style={[styles.editStatusText, { color: Colors[theme].icon }]}>
+              Ce trajet a {bookedSeats} réservation{bookedSeats > 1 ? 's' : ''}. Seules les informations non critiques peuvent être modifiées.
+            </ThemedText>
           </ThemedView>
-          <ThemedText style={[styles.paymentNote, { color: Colors[theme].icon }]}>
-            ⚠️ Vous devrez payer {currentRide.pricePerSeat} FCFA directement au conducteur lors du trajet
-          </ThemedText>
-        </ThemedView>
+        )}
 
         {/* Action Buttons */}
         <ThemedView style={styles.actionButtons}>
           <TouchableOpacity
-            style={[styles.favoriteButton, { backgroundColor: Colors[theme].card, borderColor: Colors[theme].border }]}
-            onPress={handleFavorite}
+            style={[
+              styles.editButton, 
+              { 
+                backgroundColor: bookedSeats > 0 ? Colors[theme].card : Colors[theme].tint,
+                borderColor: Colors[theme].border 
+              }
+            ]}
+            onPress={handleEditRide}
           >
             <IconSymbol 
-              name={isFavorite ? "heart.fill" : "heart"} 
-              size={24} 
-              color={isFavorite ? "#ef4444" : Colors[theme].icon} 
+              name="pencil" 
+              size={20} 
+              color={bookedSeats > 0 ? Colors[theme].tint : 'white'} 
             />
+            <ThemedText style={[
+              styles.editButtonText, 
+              { color: bookedSeats > 0 ? Colors[theme].tint : 'white' }
+            ]}>
+              {bookedSeats > 0 ? 'Modifier détails' : 'Modifier'}
+            </ThemedText>
           </TouchableOpacity>
           
           <TouchableOpacity
             style={[
-              styles.bookButton,
-              { backgroundColor: Colors[theme].tint },
-              isBooking && { opacity: 0.7 }
+              styles.cancelButton,
+              { backgroundColor: '#ef4444' },
+              isCancelling && { opacity: 0.7 }
             ]}
-            onPress={handleBooking}
-            disabled={isBooking}
+            onPress={handleCancelRide}
+            disabled={isCancelling}
           >
-            <ThemedText style={styles.bookButtonText}>
-              {isBooking ? 'Réservation...' : `Réserver (1 crédit)`}
+            <IconSymbol name="xmark.circle" size={20} color="white" />
+            <ThemedText style={styles.cancelButtonText}>
+              {isCancelling ? 'Annulation...' : 'Annuler'}
             </ThemedText>
           </TouchableOpacity>
         </ThemedView>
@@ -343,25 +351,6 @@ export default function PassengerRideDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    padding: 20,
-    paddingTop: 0,
-    backgroundColor: 'transparent',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 0.5,
-    alignSelf: 'flex-start',
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 8,
   },
   overviewCard: {
     margin: 20,
@@ -392,57 +381,44 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  driverCard: {
+  earningsCard: {
     margin: 20,
     marginTop: 0,
     padding: 20,
     borderRadius: 16,
     borderWidth: 0.5,
   },
-  driverHeader: {
+  earningsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
+    gap: 20,
+    marginBottom: 15,
     backgroundColor: 'transparent',
   },
-  driverAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 0.5,
-  },
-  driverInfo: {
+  earningsItem: {
     flex: 1,
-    backgroundColor: 'transparent',
-  },
-  driverName: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
     backgroundColor: 'transparent',
   },
-  verifiedText: {
+  earningsLabel: {
     fontSize: 12,
-    color: '#10b981',
-    fontWeight: '500',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'transparent',
-  },
-  rating: {
-    fontSize: 14,
     opacity: 0.7,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  earningsValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
   },
   routeCard: {
     margin: 20,
@@ -489,30 +465,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
   },
-  amenitiesCard: {
-    margin: 20,
-    marginTop: 0,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 0.5,
-  },
-  amenitiesList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    backgroundColor: 'transparent',
-  },
-  amenityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    borderRadius: 8,
-    borderWidth: 0.5,
-    gap: 6,
-  },
-  amenityText: {
-    fontSize: 14,
-  },
   detailsCard: {
     margin: 20,
     marginTop: 0,
@@ -558,15 +510,20 @@ const styles = StyleSheet.create({
     padding: 20,
     borderTopWidth: 0.5,
   },
-  favoriteButton: {
+  editButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
     borderRadius: 12,
     borderWidth: 0.5,
+    gap: 8,
   },
-  bookButton: {
+  editButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  cancelButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -574,7 +531,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
-  bookButtonText: {
+  cancelButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
@@ -598,36 +555,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 20,
   },
-  paymentCard: {
+  editStatusCard: {
     margin: 20,
     marginTop: 0,
-    padding: 20,
-    borderRadius: 16,
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 0.5,
   },
-  paymentInfo: {
-    gap: 15,
-    backgroundColor: 'transparent',
-  },
-  paymentItem: {
+  editStatusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
     backgroundColor: 'transparent',
   },
-  paymentLabel: {
-    fontSize: 14,
-    flex: 1,
-    marginLeft: 10,
-  },
-  paymentValue: {
+  editStatusTitle: {
     fontSize: 16,
     fontWeight: '600',
   },
-  paymentNote: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 15,
-    textAlign: 'center',
+  editStatusText: {
+    fontSize: 14,
+    lineHeight: 20,
   },
 }); 

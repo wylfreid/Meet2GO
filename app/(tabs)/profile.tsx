@@ -19,7 +19,6 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { RootState } from '@/store';
 import { uploadProfileImageAsync } from '@/services/firebase';
 import { UserAPI } from '@/services/api';
-import { formatMemberSince } from '@/utils/dateUtils';
 
 export default function ProfileScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -173,7 +172,16 @@ export default function ProfileScreen() {
   const userData = {
     name: profile?.name || user?.name || 'Utilisateur',
     email: profile?.email || user?.email || 'email@example.com',
-    memberSince: formatMemberSince(profile?.createdAt),
+    memberSince: (() => {
+      if (profile?.createdAt) {
+        console.log('🔄 profile.createdAt:', profile.createdAt);
+        const date = new Date(profile.createdAt);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' });
+        }
+      }
+      return 'Jan 2023';
+    })(),
     ridesPublished: stats?.totalRides || 0,
     ridesBooked: stats?.totalBookings || 0,
     rating: profile?.rating || 0,

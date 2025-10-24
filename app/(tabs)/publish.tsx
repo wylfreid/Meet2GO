@@ -1,6 +1,6 @@
 import { CustomDateTimePicker } from '@/components/ui/CustomDateTimePicker';
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Image } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import * as ImagePicker from 'expo-image-picker';
@@ -27,6 +27,7 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { createRide } from '@/store/slices/ridesSlice';
 import { RootState, AppDispatch } from '@/store';
+import { uploadProfileImageAsync } from '@/services/firebase';
 
 const amenityOptions = [
   "Climatisation", 
@@ -77,12 +78,14 @@ export default function PublishScreen() {
   const [acceptRules, setAcceptRules] = useState(false);
   const [skipVehicle, setSkipVehicle] = useState(false);
   const [vehiclePhoto, setVehiclePhoto] = useState<string | null>(null);
+  const [vehicleMake, setVehicleMake] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleType, setVehicleType] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [emptySeats, setEmptySeats] = useState('');
+  const [uploadingVehiclePhoto, setUploadingVehiclePhoto] = useState(false);
 
   const handleAmenityChange = (amenity: string, isSelected: boolean) => {
     setFormData(prev => ({
@@ -169,6 +172,33 @@ export default function PublishScreen() {
     }
 
     try {
+      let vehiclePhotoURL = null;
+      
+      // Upload de la photo du véhicule si elle existe
+      if (vehiclePhoto && !vehiclePhoto.startsWith('http')) {
+        setUploadingVehiclePhoto(true);
+        try {
+          console.log('🚗 Upload de la photo du véhicule vers Firebase...');
+          
+          // Générer un ID unique pour la photo du véhicule
+          const vehiclePhotoId = `vehicle_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Upload vers Firebase Storage
+          vehiclePhotoURL = await uploadProfileImageAsync(vehiclePhoto, vehiclePhotoId);
+          console.log('✅ Upload Firebase réussi, URL:', vehiclePhotoURL);
+        } catch (err) {
+          console.error('Erreur upload photo véhicule:', err);
+          Alert.alert('Erreur', 'Impossible d\'uploader la photo du véhicule.\n' + (err as Error).message);
+          setUploadingVehiclePhoto(false);
+          return;
+        } finally {
+          setUploadingVehiclePhoto(false);
+        }
+      } else if (vehiclePhoto) {
+        // Si c'est déjà une URL Firebase, l'utiliser directement
+        vehiclePhotoURL = vehiclePhoto;
+      }
+
       const rideData: any = {
         from: fromLocation!.address,
         to: toLocation!.address,
@@ -189,14 +219,28 @@ export default function PublishScreen() {
       };
 
       // Ajouter les champs optionnels seulement s'ils ne sont pas vides
-      if (formData.carMake.trim()) {
-        rideData.carMake = formData.carMake;
+      if (vehicleMake.trim()) {
+        rideData.carMake = vehicleMake;
       }
-      if (formData.carModel.trim()) {
-        rideData.carModel = formData.carModel;
+      if (vehicleModel.trim()) {
+        rideData.carModel = vehicleModel;
       }
-      if (formData.carYear.trim()) {
-        rideData.carYear = parseInt(formData.carYear);
+      if (vehicleType.trim()) {
+        rideData.carType = vehicleType;
+      }
+      if (vehicleColor.trim()) {
+        rideData.carColor = vehicleColor;
+      }
+      if (vehicleYear.trim()) {
+        rideData.carYear = parseInt(vehicleYear);
+      }
+      if (vehiclePlate.trim()) {
+        rideData.carPlate = vehiclePlate;
+      }
+      
+      // Ajouter la photo du véhicule si elle existe
+      if (vehiclePhotoURL) {
+        rideData.vehiclePhoto = vehiclePhotoURL;
       }
 
       console.log( "rideData", rideData);
@@ -229,6 +273,14 @@ export default function PublishScreen() {
           carYear: "",
           amenities: [],
         });
+        setVehiclePhoto(null);
+        setVehicleMake('');
+        setVehicleModel('');
+        setVehicleType('');
+        setVehicleColor('');
+        setVehicleYear('');
+        setVehiclePlate('');
+        setSkipVehicle(false);
       }
     } catch (error: any) {
       console.error('Erreur de publication:', error);
@@ -268,14 +320,22 @@ export default function PublishScreen() {
   };
 
   const handlePickVehiclePhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setVehiclePhoto(result.assets[0].uri);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const image = result.assets[0];
+        // Stocker l'image sélectionnée localement (pas d'upload immédiat)
+        setVehiclePhoto(image.uri);
+      }
+    } catch (error) {
+      console.error('Erreur sélection image véhicule:', error);
+      Alert.alert('Erreur', "Impossible de sélectionner l'image");
     }
   };
 
@@ -453,7 +513,9 @@ export default function PublishScreen() {
             </View>
             <TouchableOpacity onPress={handlePickVehiclePhoto} disabled={skipVehicle} style={{ marginBottom: 12 }}>
               {vehiclePhoto ? (
-                <Image source={{ uri: vehiclePhoto }} style={{ width: '100%', height: 120, borderRadius: 10 }} />
+                <View style={{ position: 'relative' }}>
+                  <Image source={{ uri: vehiclePhoto }} style={{ width: '100%', height: 120, borderRadius: 10 }} />
+                </View>
               ) : (
                 <View style={{
                   alignItems: 'center',
@@ -474,7 +536,18 @@ export default function PublishScreen() {
                 styles.input,
                 { backgroundColor: Colors[colorScheme].card, color: Colors[colorScheme].text, borderColor: Colors[colorScheme].border, marginBottom: 10, padding: 16 }
               ]}
-              placeholder="e.g. Ford Focus"
+              placeholder="Marque (ex: Ford)"
+              placeholderTextColor={Colors[colorScheme].icon}
+              value={vehicleMake}
+              onChangeText={setVehicleMake}
+              editable={!skipVehicle}
+            />
+            <TextInput
+              style={[
+                styles.input,
+                { backgroundColor: Colors[colorScheme].card, color: Colors[colorScheme].text, borderColor: Colors[colorScheme].border, marginBottom: 10, padding: 16 }
+              ]}
+              placeholder="Modèle (ex: Focus)"
               placeholderTextColor={Colors[colorScheme].icon}
               value={vehicleModel}
               onChangeText={setVehicleModel}
@@ -611,13 +684,13 @@ export default function PublishScreen() {
           }
         ]}
         onPress={handleSubmit}
-        disabled={loading || !isFormComplete()}
+        disabled={loading || uploadingVehiclePhoto || !isFormComplete()}
       >
         <ThemedText style={[
           styles.submitButtonText,
           { color: !isFormComplete() ? Colors[colorScheme].text : 'white' }
         ]}>
-          {loading ? 'Publication...' : !isFormComplete() ? 'Compléter le formulaire' : 'Publier le trajet'}
+          {loading || uploadingVehiclePhoto ? 'Publication...' : !isFormComplete() ? 'Compléter le formulaire' : 'Publier le trajet'}
         </ThemedText>
       </TouchableOpacity>
     </SafeAreaView>

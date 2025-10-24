@@ -160,7 +160,7 @@ export default function PublishedScreen() {
               const earnings = calculateEarnings(ride);
               
               return (
-                <Link key={ride.id} href={`/ride/${ride.id}`} asChild>
+                <Link key={ride.id} href={`/ride/driver/${ride.id}`} asChild>
                   <TouchableOpacity style={[styles.rideCard, { backgroundColor: Colors[colorScheme].cardSecondary, borderColor: Colors[colorScheme].border }]}>
                     <ThemedView style={styles.rideHeader}>
                       <ThemedView style={styles.routeInfo}>

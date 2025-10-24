@@ -14,7 +14,6 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { searchRides } from '@/store/slices/ridesSlice';
 import { RootState, AppDispatch } from '@/store';
-import { formatFullDate, formatTime } from '@/utils/dateUtils';
 
 // Fonction utilitaire pour gérer l'affichage de l'avatar
 const getDriverAvatar = (driver: any) => {
@@ -110,11 +109,20 @@ export default function SearchScreen() {
   };
 
   const formatRideDate = (dateString: string) => {
-    return formatFullDate(dateString);
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
   };
 
   const formatRideTime = (timeString: string) => {
-    return formatTime(timeString);
+    const date = new Date(`2000-01-01T${timeString}`);
+    return date.toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   };
 
   return (
@@ -353,7 +361,7 @@ export default function SearchScreen() {
                       <ThemedView style={styles.stat}>
                         <IconSymbol name="car.fill" size={14} color={Colors[colorScheme].icon} />
                         <ThemedText style={[styles.statText, { color: Colors[colorScheme].icon }]}>
-                          {ride.carModel || 'Voiture'}
+                          {ride.carMake && ride.carModel ? `${ride.carMake} ${ride.carModel}` : ride.carModel || ride.carMake || 'Voiture'}
                         </ThemedText>
                       </ThemedView>
                     </ThemedView>

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 
-export const API_URL = 'http://10.0.0.247:3000/api';
+export const API_URL = 'http://10.125.154.113:3000/api';
 
 // Configuration Axios avec intercepteurs
 const createApiInstance = (): AxiosInstance => {
